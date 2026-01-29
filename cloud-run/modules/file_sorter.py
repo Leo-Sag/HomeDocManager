@@ -3,7 +3,7 @@ FileSorterモジュール
 GASのFileSorter.gsの機能をPythonに移植
 """
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from datetime import datetime
 from modules.ai_router import AIRouter
 from modules.pdf_processor import PDFProcessor
@@ -11,6 +11,7 @@ from modules.drive_client import DriveClient
 from modules.photos_client import PhotosClient
 from modules.calendar_client import CalendarClient
 from modules.tasks_client import TasksClient
+from modules.grade_manager import GradeManager
 from config.settings import (
     FOLDER_IDS,
     CATEGORY_MAP,
@@ -41,23 +42,16 @@ class FileSorter:
         self.photos_client = photos_client
         self.calendar_client = calendar_client
         self.tasks_client = tasks_client
+        self.grade_manager = GradeManager()
     
-    def process_file(self, file_id: str) -> bool:
-        """
-        ファイルを処理
-        
-        Args:
-            file_id: ファイルID
-            
-        Returns:
-            成功したかどうか
-        """
+    def process_file(self, file_id: str) -> str:
+        """ファイルを処理"""
         try:
             # ファイル情報を取得
             file_info = self.drive_client.get_file(file_id)
             if not file_info:
                 logger.error(f"ファイル情報取得失敗: {file_id}")
-                return False
+                return 'ERROR'
             
             file_name = file_info['name']
             mime_type = file_info['mimeType']
@@ -67,15 +61,15 @@ class FileSorter:
             
             # 対応ファイル形式をチェック
             if mime_type not in SUPPORTED_MIME_TYPES:
-                logger.warning(f"非対応のファイル形式: {mime_type}")
-                return False
+                logger.info(f"非対応のファイル形式のためスキップ: {mime_type}")
+                return 'SKIPPED'
             
             # ファイルをダウンロード
             print(f"[DEBUG] Downloading file...", flush=True)
             file_bytes = self.drive_client.download_file(file_id)
             if not file_bytes:
                 logger.error(f"ファイルダウンロード失敗: {file_id}")
-                return False
+                return 'ERROR'
             print(f"[DEBUG] Download complete. Size: {len(file_bytes)} bytes", flush=True)
             
             # PDFの場合は画像に変換
@@ -84,12 +78,11 @@ class FileSorter:
                 images = self.pdf_processor.convert_pdf_to_images(file_bytes)
                 if not images:
                     logger.error("PDF変換失敗")
-                    return False
+                    return 'ERROR'
                 # 最初のページを使用
                 image_data = images[0]
                 print(f"[DEBUG] PDF conversion complete.", flush=True)
             else:
-                # 画像ファイルはそのまま使用
                 image_data = file_bytes
                 print(f"[DEBUG] Using original image.", flush=True)
             
@@ -98,18 +91,61 @@ class FileSorter:
                 analysis_result = self._analyze_document(image_data, file_name)
                 if not analysis_result:
                     logger.error("Gemini解析失敗")
-                    return False
+                    return 'ERROR'
             except Exception as e:
                 logger.error(f"Gemini解析致命的エラー: {e}")
-                return False
+                return 'ERROR'
             
             logger.info(f"解析結果: {analysis_result}")
+
+            # ----------------------------------------------------
+            # 子供の特定とフォルダ解決ロジック 
+            # ----------------------------------------------------
+            category = analysis_result.get('category', '')
             
+            if category == '40_子供・教育':
+                # 1. 年度計算
+                date_str = analysis_result.get('date', '')
+                fiscal_year = self.grade_manager.calculate_fiscal_year(date_str)
+                analysis_result['fiscal_year'] = fiscal_year # 後続処理のために保存
+
+                # 2. 子供特定
+                child_name = analysis_result.get('child_name')
+                target_children = []
+
+                if child_name:
+                    # 明示的な名前がある場合
+                    target_children = [child_name]
+                else:
+                    # 名前がない場合、学年/クラスから推測
+                    grade_class_text = analysis_result.get('target_grade_class', '')
+                    if grade_class_text:
+                        target_children = self.grade_manager.identify_children(grade_class_text, fiscal_year)
+                
+                # 特定できた場合、結果に保存（上書き）
+                if target_children:
+                    # 複数人の場合でも最初の1人を代表としてchild_nameに入れておく（既存ロジック互換性のため）
+                    # ただし、フォルダ解決には target_children 全体を使う
+                    analysis_result['target_children'] = target_children
+                    if not child_name:
+                        analysis_result['child_name'] = target_children[0]
+                
+                # 3. フォルダ名の決定 (共有フォルダ対応)
+                # target_children が空の場合はデフォルト処理へ
+                folder_name, label, emoji = self.grade_manager.resolve_folder_name(target_children)
+                
+                if folder_name:
+                    analysis_result['resolved_folder_name'] = folder_name
+                    analysis_result['resolved_label'] = label
+                    analysis_result['resolved_emoji'] = emoji
+            
+            # ----------------------------------------------------
+
             # 移動先フォルダを決定
             destination_folder_id = self._get_destination_folder(analysis_result)
             if not destination_folder_id:
                 logger.error("移動先フォルダ決定失敗")
-                return False
+                return 'ERROR'
             
             # 新しいファイル名を生成
             new_file_name = self._generate_new_filename(
@@ -125,13 +161,12 @@ class FileSorter:
             print(f"[DEBUG] Moving file to {destination_folder_id}...", flush=True)
             if not self.drive_client.move_file(file_id, destination_folder_id):
                 logger.error(f"ファイル移動失敗: {file_id}")
-                return False
+                return 'ERROR'
             print(f"[DEBUG] Move complete.", flush=True)
             
             logger.info(f"処理完了: {file_name} → {new_file_name}")
             
             # 汎用処理：カテゴリに基づく追加アクション
-            category = analysis_result.get('category', '')
             sub_category = analysis_result.get('sub_category', '')
             
             # Google Photos アップロード判定
@@ -145,14 +180,13 @@ class FileSorter:
                 
             # Calendar / Tasks 登録判定 (40_子供・教育の場合)
             if category == '40_子供・教育':
-                child_name = analysis_result.get('child_name')
-                self._register_calendar_and_tasks(image_data, new_file_name, file_id, child_name)
+                self._register_calendar_and_tasks(image_data, new_file_name, file_id, analysis_result)
             
-            return True
+            return 'PROCESSED'
             
         except Exception as e:
             logger.error(f"ファイル処理エラー: {e}")
-            return False
+            return 'ERROR'
     
     def _analyze_document(
         self,
@@ -160,7 +194,6 @@ class FileSorter:
         file_name: str
     ) -> Optional[Dict]:
         """ドキュメントを解析"""
-        # 名寄せルールを文字列化
         aliases_str = '\n'.join([
             f"{name}: {', '.join(aliases)}"
             for name, aliases in CHILD_ALIASES.items()
@@ -174,8 +207,9 @@ class FileSorter:
 
 ## 出力形式（必ずこのJSON形式で回答）
 {{
-  "category": "カテゴリ名（以下のいずれか）",
-  "child_name": "お子様の名前（名寄せ後の正規名。複数または不明時は「共通・学校全般」）",
+  "category": "カテゴリ名",
+  "child_name": "お子様の名前（名寄せ後の正規名。複数または不明時は空文字）",
+  "target_grade_class": "対象となる学年やクラス名（例：小2、くるみ組、1年生）。固有名詞がない場合に抽出",
   "sub_category": "サブカテゴリ（categoryが40_子供・教育の場合のみ）",
   "is_photo": false,
   "date": "YYYYMMDD形式の日付",
@@ -184,60 +218,66 @@ class FileSorter:
 }}
 
 ## カテゴリ一覧
-- 10_マネー・税務（銀行、保険、税金、請求書、領収書）
-- 20_プロジェクト・資産（不動産、車、家電購入記録、修理記録）
-- 30_ライフ・行政（役所、医療、年金、マイナンバー）
-- 40_子供・教育（学校、塾、習い事のお便り）
-- 50_写真・その他（書類ではない写真、分類不能なもの）
-- 90_ライブラリ（家電の取扱説明書、ガイドブック、マニュアル類）
+- 10_マネー・税務
+- 20_プロジェクト・資産
+- 30_ライフ・行政
+- 40_子供・教育
+- 50_写真・その他
+- 90_ライブラリ
 
 ## サブカテゴリ（40_子供・教育の場合のみ使用）
-- 01_お便り・スケジュール（行事予定、お知らせ）
-- 02_提出・手続き・重要（提出書類、申込書）
-- 03_記録・作品・成績（成績表、作品、賞状）
+- 01_お便り・スケジュール
+- 02_提出・手続き・重要
+- 03_記録・作品・成績
 
 ## 判断基準
 - is_photoがtrueの場合は、categoryを「50_写真・その他」にしてください
 - 日付が不明な場合は本日の日付を使用してください
 - confidence_scoreは0.0〜1.0の範囲で、解析結果の信頼度を示してください
+- 学年やクラス名（「小2」「くるみ組」など）が記載されている場合は、target_grade_classに抽出してください
 
 ## ファイル名
 {file_name}
 """
-        
         return self.ai_router.analyze_document(image_data, prompt)
     
     def _get_destination_folder(self, result: Dict) -> Optional[str]:
         """移動先フォルダIDを取得"""
         category = result.get('category', '')
         
-        # 写真の場合
         if result.get('is_photo', False) or category == '50_写真・その他':
             return FOLDER_IDS['PHOTO_OTHER']
         
-        # 40_子供・教育の場合は年度フォルダ構造を作成
         if category == '40_子供・教育':
             return self._get_children_edu_folder(result)
         
-        # その他のカテゴリ
         return CATEGORY_MAP.get(category, FOLDER_IDS['PHOTO_OTHER'])
     
     def _get_children_edu_folder(self, result: Dict) -> Optional[str]:
         """40_子供・教育用のフォルダ構造を作成"""
         base_folder_id = FOLDER_IDS['CHILDREN_EDU']
         
-        # 子供名フォルダ
-        child_name = result.get('child_name', '共通・学校全般')
+        # 解決済みのフォルダ名を使用（なければ child_name または デフォルト）
+        folder_name = result.get('resolved_folder_name')
+        if not folder_name:
+             folder_name = result.get('child_name', '共通・学校全般')
+
+        # 子供名フォルダ (または共有グループフォルダ)
         child_folder_id = self.drive_client.get_or_create_folder(
-            child_name,
+            folder_name,
             base_folder_id
         )
         if not child_folder_id:
             return None
         
         # 年度フォルダ
-        date_str = result.get('date', '')
-        fiscal_year = self._get_fiscal_year(date_str)
+        # process_fileで計算済みであればそれを使う
+        fiscal_year = result.get('fiscal_year')
+        if not fiscal_year:
+             # フォールバック
+             date_str = result.get('date', '')
+             fiscal_year = self.grade_manager.calculate_fiscal_year(date_str)
+
         year_folder_id = self.drive_client.get_or_create_folder(
             f"{fiscal_year}年度",
             child_folder_id
@@ -252,24 +292,6 @@ class FileSorter:
             year_folder_id
         )
     
-    def _get_fiscal_year(self, date_string: str) -> int:
-        """日本の学校年度を取得（4月始まり）"""
-        try:
-            year = int(date_string[:4])
-            month = int(date_string[4:6])
-            
-            # 1〜3月は前年度扱い
-            if 1 <= month <= 3:
-                return year - 1
-            return year
-        except:
-            # パースエラーの場合は現在の年度
-            now = datetime.now()
-            year = now.year
-            if now.month <= 3:
-                return year - 1
-            return year
-    
     def _generate_new_filename(
         self,
         result: Dict,
@@ -279,17 +301,12 @@ class FileSorter:
         date = result.get('date', datetime.now().strftime('%Y%m%d'))
         summary = result.get('summary', 'document')
         
-        # 拡張子を取得
         parts = original_name.split('.')
         extension = parts[-1] if len(parts) > 1 else 'pdf'
         
         return f"{date}_{summary}.{extension}"
     
-    def _upload_to_photos(
-        self,
-        image_data: bytes,
-        result: Dict
-    ):
+    def _upload_to_photos(self, image_data: bytes, result: Dict):
         """Google Photosにアップロード"""
         if not self.photos_client:
             return
@@ -309,7 +326,7 @@ class FileSorter:
         image_data: bytes,
         file_name: str,
         file_id: str,
-        child_name: str = None
+        analysis_result: Dict
     ):
         """カレンダーとタスクに登録"""
         if not self.calendar_client and not self.tasks_client:
@@ -324,15 +341,46 @@ class FileSorter:
                 logger.warning("カレンダー・タスク情報抽出失敗（null）")
                 return
 
-            # ファイルURL（参照用）
+            # ファイルURL
             file_url = f"https://drive.google.com/file/d/{file_id}/view"
+
+            # プレフィックス作成
+            # 解決済みの情報は analysis_result に入っている
+            # 単一の子供の場合
+            target_children = analysis_result.get('target_children', [])
+            fiscal_year = analysis_result.get('fiscal_year')
+            
+            title_prefix = ""
+            if target_children and fiscal_year:
+                # 複数の子供がいる場合は、それぞれ個別に登録するか、共有ラベルにするか
+                # ここでは共有グループのラベルがあればそれを使い、なければ列挙する
+                if analysis_result.get('resolved_emoji'):
+                    # グループ絵文字がある場合 (例: [🐿️])
+                    title_prefix = f"[{analysis_result['resolved_emoji']}]"
+                else:
+                    # 個別の場合、最初の子供の学年表記を取得
+                    # カレンダー上はスペース節約のため、1人ならその子の学年だけ、複数なら絵文字または名前
+                    child_name = target_children[0]
+                    grade = self.grade_manager.get_child_grade(child_name, fiscal_year)
+                    label, emoji = self.grade_manager.get_grade_info(grade)
+                    
+                    # ラベル優先順位: Label > Emoji > Name
+                    # 保育園も「ぽぷら組」などのテキスト表記を優先（絵文字が化ける可能性があるため）
+                    if label: 
+                        title_prefix = f"[{label}]"
+                    elif emoji:
+                        title_prefix = f"[{emoji}]"
+                    else:
+                        title_prefix = f"[{child_name}]"
+            
+            elif analysis_result.get('child_name'):
+                title_prefix = f"[{analysis_result['child_name']}]"
 
             # イベント登録
             if self.calendar_client and result.get('events'):
                 for event in result['events']:
-                    # 子供の名前があればタイトルに付与
-                    if child_name:
-                        event['title'] = f"【{child_name}】{event.get('title', '')}"
+                    if title_prefix:
+                        event['title'] = f"{title_prefix} {event.get('title', '')}"
                     
                     link = self.calendar_client.create_event(event, f"📎 元のお便り: {file_url}")
                     if link:
@@ -341,9 +389,8 @@ class FileSorter:
             # タスク登録
             if self.tasks_client and result.get('tasks'):
                 for task in result['tasks']:
-                    # 子供の名前があればタイトルに付与
-                    if child_name:
-                        task['title'] = f"【{child_name}】{task.get('title', '')}"
+                    if title_prefix:
+                        task['title'] = f"{title_prefix} {task.get('title', '')}"
 
                     task_id = self.tasks_client.create_task(task, f"📎 元のお便り: {file_url}")
                     if task_id:

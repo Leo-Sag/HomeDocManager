@@ -6,8 +6,8 @@ import requests
 import sys
 
 # Configuration
-SERVICE_URL = "https://document-processor-4cs6mcxl7q-an.a.run.app"
-TEST_FILE_ID = "1Z93pxvYa8eXI6Hi47YD66in7FdZFngSW"
+SERVICE_URL = "https://document-processor-333818874776.asia-northeast1.run.app"
+TEST_FILE_ID = "1LIgzaK8u1jKW2-4X5veKDaFgCSlMxFNl"
 
 def get_identity_token():
     try:

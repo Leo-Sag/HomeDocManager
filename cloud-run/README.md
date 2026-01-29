@@ -11,6 +11,8 @@ ScanSnap iX1300とGemini 3を使用したPCレス・ドキュメント管理シ�
 - **AIルーターパターン**: Gemini 3 Flash優先、信頼度スコアに基づくProへのエスカレーション
 - **PDF処理**: poppler-utilsを使用した高度なPDF→画像変換
 - **Google Photos連携**: OAuth 2.0による2段階アップロードプロトコル
+- **学年・クラス自動仕分け**: ファイル日付から年度を計算し、学年やクラス名（「小2」「ぽぷら組」など）を自動判定
+- **カレンダー・タスク連携強化**: 子供ごとに分かりやすいプレフィックス自動付与（例: `[小2]`, `[くるみ組]`）
 - **イベント駆動**: Pub/Subトリガーによるリアルタイム処理
 - **コスト最適化**: 月間1,000枚処理で約150円（無料枠内）
 
@@ -29,6 +31,9 @@ cloud-run/
 │   ├── pdf_processor.py      # PDF→画像変換
 │   ├── drive_client.py       # Google Drive API
 │   ├── photos_client.py      # Google Photos API
+│   ├── calendar_client.py    # Google Calendar API
+│   ├── tasks_client.py       # Google Tasks API
+│   ├── grade_manager.py      # 学年・クラス計算ロジック
 │   └── file_sorter.py        # FileSorter機能
 ├── utils/
 │   └── logger.py             # ロギング設定
