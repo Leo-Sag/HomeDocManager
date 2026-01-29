@@ -144,3 +144,62 @@ class AIRouter:
         confidence = result.get('confidence_score', 0.0)
         threshold = AI_ROUTER_CONFIG['CONFIDENCE_THRESHOLD']
         return confidence >= threshold
+
+    def extract_events_and_tasks(
+        self,
+        image_data: bytes,
+        file_name: str
+    ) -> Optional[Dict]:
+        """
+        ドキュメントから予定とタスクを抽出
+        
+        Args:
+            image_data: 画像バイナリデータ
+            file_name: ファイル名
+            
+        Returns:
+            抽出結果（JSON）
+        """
+        from datetime import datetime
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        prompt = f"""
+あなたは学校のお便りから予定とタスクを抽出するアシスタントです。
+以下の画像を解析し、JSON形式で回答してください。
+
+## 出力形式（必ずこのJSON形式で回答）
+{{
+  "events": [
+    {{
+      "title": "イベントタイトル",
+      "date": "YYYY-MM-DD",
+      "start_time": "HH:MM（不明な場合は null）",
+      "end_time": "HH:MM（不明な場合は null）",
+      "location": "場所（不明な場合は null）",
+      "description": "詳細説明"
+    }}
+  ],
+  "tasks": [
+    {{
+      "title": "タスクタイトル（例：○○の提出）",
+      "due_date": "YYYY-MM-DD",
+      "notes": "備考"
+    }}
+  ]
+}}
+
+## 判断基準
+- **events**: 日時が確定している行事（運動会、授業参観、保護者会など）
+- **tasks**: 期限がある提出物や準備事項（書類提出、持ち物準備など）
+
+## 注意事項
+- 過去の日付（{today}より前）のイベント・タスクは除外してください
+- 年が明示されていない場合は、{today[:4]}年と仮定してください
+- 抽出できる情報がない場合は、eventsとtasksを空配列にしてください
+
+## ファイル名
+{file_name}
+"""
+        # 構造化抽出のためProモデル使用またはFlashでもJSONモード
+        # ここでは既存の _call_gemini を使用 (Flash優先)
+        return self.analyze_document(image_data, prompt, use_flash_first=True)

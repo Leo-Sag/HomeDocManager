@@ -9,6 +9,8 @@ from modules.ai_router import AIRouter
 from modules.pdf_processor import PDFProcessor
 from modules.drive_client import DriveClient
 from modules.photos_client import PhotosClient
+from modules.calendar_client import CalendarClient
+from modules.tasks_client import TasksClient
 from config.settings import (
     FOLDER_IDS,
     CATEGORY_MAP,
@@ -28,13 +30,17 @@ class FileSorter:
         ai_router: AIRouter,
         pdf_processor: PDFProcessor,
         drive_client: DriveClient,
-        photos_client: Optional[PhotosClient] = None
+        photos_client: Optional[PhotosClient] = None,
+        calendar_client: Optional[CalendarClient] = None,
+        tasks_client: Optional[TasksClient] = None
     ):
         """初期化"""
         self.ai_router = ai_router
         self.pdf_processor = pdf_processor
         self.drive_client = drive_client
         self.photos_client = photos_client
+        self.calendar_client = calendar_client
+        self.tasks_client = tasks_client
     
     def process_file(self, file_id: str) -> bool:
         """
@@ -124,10 +130,11 @@ class FileSorter:
             
             logger.info(f"処理完了: {file_name} → {new_file_name}")
             
-            # Google Photosにアップロード（40-03または50の場合のみ）
+            # 汎用処理：カテゴリに基づく追加アクション
             category = analysis_result.get('category', '')
             sub_category = analysis_result.get('sub_category', '')
             
+            # Google Photos アップロード判定
             should_upload_to_photos = (
                 category == '50_写真・その他' or
                 (category == '40_子供・教育' and sub_category == '03_記録・作品・成績')
@@ -135,6 +142,11 @@ class FileSorter:
             
             if self.photos_client and should_upload_to_photos:
                 self._upload_to_photos(image_data, analysis_result)
+                
+            # Calendar / Tasks 登録判定 (40_子供・教育の場合)
+            if category == '40_子供・教育':
+                child_name = analysis_result.get('child_name')
+                self._register_calendar_and_tasks(image_data, new_file_name, file_id, child_name)
             
             return True
             
@@ -291,3 +303,51 @@ class FileSorter:
                 logger.warning("Google Photosアップロード失敗")
         except Exception as e:
             logger.error(f"Google Photosアップロードエラー: {e}")
+
+    def _register_calendar_and_tasks(
+        self,
+        image_data: bytes,
+        file_name: str,
+        file_id: str,
+        child_name: str = None
+    ):
+        """カレンダーとタスクに登録"""
+        if not self.calendar_client and not self.tasks_client:
+            return
+
+        logger.info("カレンダー・タスク抽出処理開始...")
+        try:
+            # Geminiでスケジュール・タスク情報を抽出
+            result = self.ai_router.extract_events_and_tasks(image_data, file_name)
+            
+            if not result:
+                logger.warning("カレンダー・タスク情報抽出失敗（null）")
+                return
+
+            # ファイルURL（参照用）
+            file_url = f"https://drive.google.com/file/d/{file_id}/view"
+
+            # イベント登録
+            if self.calendar_client and result.get('events'):
+                for event in result['events']:
+                    # 子供の名前があればタイトルに付与
+                    if child_name:
+                        event['title'] = f"【{child_name}】{event.get('title', '')}"
+                    
+                    link = self.calendar_client.create_event(event, f"📎 元のお便り: {file_url}")
+                    if link:
+                        logger.info(f"イベント作成成功: {event.get('title')}")
+
+            # タスク登録
+            if self.tasks_client and result.get('tasks'):
+                for task in result['tasks']:
+                    # 子供の名前があればタイトルに付与
+                    if child_name:
+                        task['title'] = f"【{child_name}】{task.get('title', '')}"
+
+                    task_id = self.tasks_client.create_task(task, f"📎 元のお便り: {file_url}")
+                    if task_id:
+                        logger.info(f"タスク作成成功: {task.get('title')}")
+
+        except Exception as e:
+            logger.error(f"カレンダー・タスク登録プロセスエラー: {e}")

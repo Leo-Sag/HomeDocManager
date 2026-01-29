@@ -1,64 +1,21 @@
 """
-Google Photos APIクライアント
-OAuth 2.0リフレッシュトークンを使用した認証と2段階アップロード
+Google Photos API Client
+Authentication and 2-step upload using OAuth 2.0 Refresh Token.
 """
-import os
 import logging
 import requests
 from typing import Optional
-from google.cloud import secretmanager
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from config.settings import GCP_PROJECT_ID, SECRET_PHOTOS_REFRESH_TOKEN
+from modules.auth_utils import get_oauth_credentials
 
 logger = logging.getLogger(__name__)
 
 
 class PhotosClient:
-    """Google Photos APIクライアント"""
+    """Google Photos API Client"""
     
     def __init__(self):
-        """初期化"""
-        self.credentials = self._get_credentials()
-        
-    def _get_credentials(self) -> Credentials:
-        """Secret Managerからリフレッシュトークンを取得して認証"""
-        try:
-            client = secretmanager.SecretManagerServiceClient()
-            name = f"projects/{GCP_PROJECT_ID}/secrets/{SECRET_PHOTOS_REFRESH_TOKEN}/versions/latest"
-            response = client.access_secret_version(request={"name": name})
-            refresh_token = response.payload.data.decode('UTF-8').strip()
-        except Exception as e:
-            logger.error(f"Secret Managerトークン取得エラー: {e}")
-            # フォールバック: 環境変数から取得
-            refresh_token = os.getenv('PHOTOS_REFRESH_TOKEN')
-            if refresh_token:
-                refresh_token = refresh_token.strip()
-            
-            if not refresh_token:
-                raise ValueError("Photos refresh tokenが見つかりません")
-        
-        # クライアントIDとシークレットもサニタイズ
-        client_id = os.getenv('OAUTH_CLIENT_ID')
-        if client_id:
-            client_id = client_id.strip()
-            
-        client_secret = os.getenv('OAUTH_CLIENT_SECRET')
-        if client_secret:
-            client_secret = client_secret.strip()
-
-        # リフレッシュトークンから認証情報を作成
-        creds = Credentials(
-            token=None,
-            refresh_token=refresh_token,
-            token_uri='https://oauth2.googleapis.com/token',
-            client_id=client_id,
-            client_secret=client_secret
-        )
-        
-        # トークンをリフレッシュ
-        creds.refresh(Request())
-        return creds
+        """Initialize"""
+        self.credentials = get_oauth_credentials()
     
     def upload_image(
         self, 
