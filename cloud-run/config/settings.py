@@ -60,6 +60,45 @@ CHILD_ALIASES: Dict[str, List[str]] = {
     'アンナ': ['アンナ', 'Anna']
 }
 
+# 大人の名寄せルール
+# カレンダー/タスクのラベルには正規名をそのまま使用
+ADULT_ALIASES: Dict[str, List[str]] = {
+    '千世己': ['千世己', 'Chiseki', 'ちせき', 'チセキ'],
+    'まどか': ['まどか', 'Madoka', 'マドカ'],
+    '怜央奈': ['怜央奈', 'Leo', 'Reona', 'れおな', 'レオナ'],
+    '今日子': ['今日子', 'Kyoko', 'きょうこ', '綿谷', 'Wataya'],
+    'えりか': ['えりか', 'Erika', 'エリカ', 'Эрика']
+}
+
+# 年度サブフォルダを作成するカテゴリ
+CATEGORIES_WITH_YEAR_SUBFOLDER: List[str] = [
+    '10_マネー・税務',
+    '30_ライフ・行政',
+    '40_子供・教育'
+]
+
+# NotebookLM同期対象カテゴリ
+NOTEBOOKLM_SYNC_CATEGORIES: List[str] = [
+    '10_マネー・税務',
+    '20_プロジェクト・資産',
+    '30_ライフ・行政',
+    '40_子供・教育',
+    '90_ライブラリ'
+]
+
+# NotebookLMドキュメントのオーナー（サービスアカウントの容量制限回避用）
+NOTEBOOKLM_OWNER_EMAIL: str = 'leo.courageous.lion@gmail.com'
+
+# 子供の卒業設定
+# 高校3年（学年コード12）を超えると大人として扱う
+CHILD_GRADUATION_GRADE: int = 12
+
+# 大人用カテゴリ（卒業後の子供の書類はこれらに振り分け）
+ADULT_CATEGORIES: List[str] = [
+    '10_マネー・税務',
+    '30_ライフ・行政'
+]
+
 # 学年・クラス設定
 # 基準年度: 2024年度 (2024/4/1 - 2025/3/31)
 # 学年コード: 小1=1, 中1=7, 高1=10, 年長=-1, 年中=-2, 年少=-3
@@ -86,6 +125,16 @@ GRADE_CONFIG = {
             'children': ['遥香', 'アンナ', 'ミハイル'],
             'folder_name': 'Haruka-Anna-Mischa',
             'label': '🐿️'
+        },
+        'いちょう組': {
+            'children': ['遥香', 'アンナ', 'ミハイル'],
+            'folder_name': 'Haruka-Anna-Mischa',
+            'label': '🍂'
+        },
+        'ぽぷら組': {
+            'children': ['遥香', 'アンナ', 'ミハイル'],
+            'folder_name': 'Haruka-Anna-Mischa',
+            'label': '🌳'
         }
     }
 }

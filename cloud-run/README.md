@@ -12,7 +12,10 @@ ScanSnap iX1300とGemini 3を使用したPCレス・ドキュメント管理シ�
 - **PDF処理**: poppler-utilsを使用した高度なPDF→画像変換
 - **Google Photos連携**: OAuth 2.0による2段階アップロードプロトコル
 - **学年・クラス自動仕分け**: ファイル日付から年度を計算し、学年やクラス名（「小2」「ぽぷら組」など）を自動判定
-- **カレンダー・タスク連携強化**: 子供ごとに分かりやすいプレフィックス自動付与（例: `[小2]`, `[くるみ組]`）
+- **大人用書類対応**: 家族メンバーの名寄せによる自動認識とカレンダー/タスク登録
+- **年度サブフォルダ**: マネー・税務、ライフ・行政カテゴリも年度別に自動整理
+- **NotebookLM自動同期**: 処理済みファイルのOCRテキストを年度別累積ドキュメントに自動追記
+- **カレンダー・タスク連携強化**: 子供・大人ごとに分かりやすいプレフィックス自動付与（例: `[小2]`, `[怜央奈]`）
 - **イベント駆動**: Pub/Subトリガーによるリアルタイム処理
 - **コスト最適化**: 月間1,000枚処理で約150円（無料枠内）
 
@@ -25,7 +28,7 @@ cloud-run/
 ├── Dockerfile                 # コンテナ定義
 ├── .env.example              # 環境変数テンプレート
 ├── config/
-│   └── settings.py           # 設定ファイル（Config.gsから移植）
+│   └── settings.py           # 設定ファイル（子供・大人の名寄せルール含む）
 ├── modules/
 │   ├── ai_router.py          # Gemini Flash/Proルーター
 │   ├── pdf_processor.py      # PDF→画像変換
@@ -34,6 +37,7 @@ cloud-run/
 │   ├── calendar_client.py    # Google Calendar API
 │   ├── tasks_client.py       # Google Tasks API
 │   ├── grade_manager.py      # 学年・クラス計算ロジック
+│   ├── notebooklm_sync.py    # NotebookLM累積ドキュメント同期
 │   └── file_sorter.py        # FileSorter機能
 ├── utils/
 │   └── logger.py             # ロギング設定

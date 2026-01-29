@@ -6,7 +6,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
-from config.settings import GRADE_CONFIG, CHILD_ALIASES
+from config.settings import GRADE_CONFIG, CHILD_ALIASES, CHILD_GRADUATION_GRADE
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,22 @@ class GradeManager:
             
         return "", ""
 
+    def is_graduated(self, child_name: str, fiscal_year: int) -> bool:
+        """
+        子供が高校を卒業しているかチェック
+        
+        Args:
+            child_name: 子供の名前
+            fiscal_year: 年度
+            
+        Returns:
+            高校卒業後であればTrue
+        """
+        grade = self.get_child_grade(child_name, fiscal_year)
+        if grade == -99:  # 不明な子供
+            return False
+        return grade > CHILD_GRADUATION_GRADE
+
     def identify_children(self, text: str, fiscal_year: int) -> List[str]:
         """
         テキスト（名前、学年、クラス名）から該当する子供のリストを取得
@@ -105,7 +121,10 @@ class GradeManager:
         # 2. クラス名・学年からの推測
         # 保育園クラス名チェック
         for grade, info in self.preschool_classes.items():
-            if info['name'] in text:
+            class_name = info['name']
+            simple_name = class_name.replace('組', '') # "いちょう"など
+            # "いちょう組" または "いちょう" (文字数>1) が含まれているか
+            if class_name in text or (len(simple_name) > 1 and simple_name in text):
                 return self._get_children_by_grade(grade, fiscal_year)
 
         # 学年表記チェック (正規表現)
@@ -126,6 +145,26 @@ class GradeManager:
         if match:
             grade = int(match.group(1).translate(str.maketrans('１２３', '123'))) + 9
             return self._get_children_by_grade(grade, fiscal_year)
+
+        # 3. クラス名表記 (例: 2-B, 2年B組) - "組"がない場合も考慮
+        # パターン: 数字 + ハイフン/年 + アルファベット/組
+        match = re.search(r'(\d+)[-－年]([A-ZＡ-Ｚ])(?:組)?', text)
+        if match:
+            num = int(match.group(1))
+            # 小学校と仮定 (grade=num)
+            possible_children = self._get_children_by_grade(num, fiscal_year)
+            if possible_children:
+                return possible_children
+            
+            # 中学校と仮定 (grade=num+6) (数字が1-3の場合)
+            if 1 <= num <= 3:
+                 possible_children = self._get_children_by_grade(num + 6, fiscal_year)
+                 if possible_children:
+                     return possible_children
+                 # 高校
+                 possible_children = self._get_children_by_grade(num + 9, fiscal_year)
+                 if possible_children:
+                     return possible_children
 
         return []
 

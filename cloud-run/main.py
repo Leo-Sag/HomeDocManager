@@ -14,7 +14,10 @@ from modules.photos_client import PhotosClient
 from modules.drive_client import DriveClient
 from modules.calendar_client import CalendarClient
 from modules.tasks_client import TasksClient
+from modules.notebooklm_sync import NotebookLMSync
 from modules.file_sorter import FileSorter
+from config.settings import FOLDER_IDS
+from config.settings import FOLDER_IDS
 
 # ロギング設定
 setup_logging()
@@ -29,12 +32,13 @@ photos_client = None
 drive_client = None
 calendar_client = None
 tasks_client = None
+notebooklm_sync = None
 file_sorter = None
 
 
 def init_modules():
     """モジュールを初期化"""
-    global ai_router, pdf_processor, photos_client, drive_client, calendar_client, tasks_client, file_sorter
+    global ai_router, pdf_processor, photos_client, drive_client, calendar_client, tasks_client, notebooklm_sync, file_sorter
     
     if ai_router is None:
         logger.info("モジュールを初期化中...")
@@ -66,13 +70,22 @@ def init_modules():
             logger.warning(f"Google Tasks APIクライアント初期化失敗: {e}")
             tasks_client = None
         
+        # NotebookLM同期
+        try:
+            notebooklm_sync = NotebookLMSync(drive_client)
+            logger.info("NotebookLM同期モジュール初期化成功")
+        except Exception as e:
+            logger.warning(f"NotebookLM同期モジュール初期化失敗: {e}")
+            notebooklm_sync = None
+        
         file_sorter = FileSorter(
             ai_router,
             pdf_processor,
             drive_client,
             photos_client,
             calendar_client,
-            tasks_client
+            tasks_client,
+            notebooklm_sync
         )
         logger.info("モジュール初期化完了")
 
@@ -146,6 +159,77 @@ def test_endpoint():
             
     except Exception as e:
         logger.error(f"Test endpoint error: {e}", exc_info=True)
+        return {'error': str(e)}, 500
+
+
+        return {'error': str(e)}, 500
+
+
+@app.route('/admin/info', methods=['GET'])
+def admin_info():
+    """ストレージ情報などを確認"""
+    try:
+        init_modules()
+        if not drive_client:
+             return {'error': 'Drive client not initialized'}, 500
+        about = drive_client.service.about().get(fields="storageQuota,user").execute()
+        return {'status': 'OK', 'about': about}, 200
+    except Exception as e:
+        logger.error(f"Error getting info: {e}")
+        return {'error': str(e)}, 500
+
+
+@app.route('/admin/cleanup', methods=['POST'])
+def admin_cleanup():
+    """SAのストレージクリーンアップ"""
+    try:
+        init_modules()
+        if not drive_client:
+             return {'error': 'Drive client not initialized'}, 500
+        stats = drive_client.cleanup_service_account_storage()
+        return {'status': 'OK', 'stats': stats}, 200
+    except Exception as e:
+        logger.error(f"Error executing cleanup: {e}")
+        return {'error': str(e)}, 500
+
+
+@app.route('/trigger/inbox', methods=['POST'])
+def trigger_inbox():
+    """Inboxフォルダ内の全ファイルを処理（手動トリガー代替）"""
+    try:
+        init_modules()
+        if not drive_client or not file_sorter:
+             return {'error': 'Modules not initialized'}, 500
+             
+        inbox_id = FOLDER_IDS['SOURCE']
+        files = drive_client.list_files_in_folder(inbox_id, limit=50) # Limit to avoid timeouts
+        
+        results = {
+            'processed': 0,
+            'errors': 0,
+            'details': []
+        }
+        
+        for file in files:
+            file_id = file['id']
+            file_name = file.get('name', 'Unknown')
+            logger.info(f"Inbox scan processing: {file_name} ({file_id})")
+            
+            try:
+                res = file_sorter.process_file(file_id)
+                results['details'].append({'id': file_id, 'name': file_name, 'result': res})
+                if res in ['PROCESSED', 'SKIPPED']:
+                    results['processed'] += 1
+                else:
+                    results['errors'] += 1
+            except Exception as e:
+                logger.error(f"Error processing file {file_id}: {e}")
+                results['errors'] += 1
+                results['details'].append({'id': file_id, 'name': file_name, 'error': str(e)})
+        
+        return {'status': 'OK', 'results': results}, 200
+    except Exception as e:
+        logger.error(f"Error scanning inbox: {e}")
         return {'error': str(e)}, 500
 
 

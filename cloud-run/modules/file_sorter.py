@@ -12,12 +12,15 @@ from modules.photos_client import PhotosClient
 from modules.calendar_client import CalendarClient
 from modules.tasks_client import TasksClient
 from modules.grade_manager import GradeManager
+from modules.notebooklm_sync import NotebookLMSync
 from config.settings import (
     FOLDER_IDS,
     CATEGORY_MAP,
     CHILD_ALIASES,
+    ADULT_ALIASES,
     SUB_CATEGORIES,
-    SUPPORTED_MIME_TYPES
+    SUPPORTED_MIME_TYPES,
+    CATEGORIES_WITH_YEAR_SUBFOLDER
 )
 
 logger = logging.getLogger(__name__)
@@ -33,7 +36,8 @@ class FileSorter:
         drive_client: DriveClient,
         photos_client: Optional[PhotosClient] = None,
         calendar_client: Optional[CalendarClient] = None,
-        tasks_client: Optional[TasksClient] = None
+        tasks_client: Optional[TasksClient] = None,
+        notebooklm_sync: Optional[NotebookLMSync] = None
     ):
         """初期化"""
         self.ai_router = ai_router
@@ -42,6 +46,7 @@ class FileSorter:
         self.photos_client = photos_client
         self.calendar_client = calendar_client
         self.tasks_client = tasks_client
+        self.notebooklm_sync = notebooklm_sync
         self.grade_manager = GradeManager()
     
     def process_file(self, file_id: str) -> str:
@@ -130,14 +135,32 @@ class FileSorter:
                     if not child_name:
                         analysis_result['child_name'] = target_children[0]
                 
-                # 3. フォルダ名の決定 (共有フォルダ対応)
-                # target_children が空の場合はデフォルト処理へ
-                folder_name, label, emoji = self.grade_manager.resolve_folder_name(target_children)
+                # 3. 卒業チェック（高校卒業後は大人として扱う）
+                if target_children:
+                    first_child = target_children[0]
+                    if self.grade_manager.is_graduated(first_child, fiscal_year):
+                        logger.info(f"{first_child}は高校卒業後です。大人カテゴリに振り分けます")
+                        # カテゴリを大人用に変更
+                        category = analysis_result.get('category', '')
+                        if category == '40_子供・教育':
+                            analysis_result['category'] = '30_ライフ・行政'
+                        # 大人として扱う（カレンダーラベル用）
+                        analysis_result['target_adult'] = first_child
+                        # 子供関連の情報をクリア
+                        analysis_result['target_children'] = []
+                        analysis_result['child_name'] = None
                 
-                if folder_name:
-                    analysis_result['resolved_folder_name'] = folder_name
-                    analysis_result['resolved_label'] = label
-                    analysis_result['resolved_emoji'] = emoji
+                # 4. フォルダ名の決定 (共有フォルダ対応) - 卒業していない場合のみ
+                # target_children が空の場合はデフォルト処理へ
+                if analysis_result.get('target_children'):
+                    folder_name, label, emoji = self.grade_manager.resolve_folder_name(
+                        analysis_result['target_children']
+                    )
+                    
+                    if folder_name:
+                        analysis_result['resolved_folder_name'] = folder_name
+                        analysis_result['resolved_label'] = label
+                        analysis_result['resolved_emoji'] = emoji
             
             # ----------------------------------------------------
 
@@ -178,9 +201,45 @@ class FileSorter:
             if self.photos_client and should_upload_to_photos:
                 self._upload_to_photos(image_data, analysis_result)
                 
-            # Calendar / Tasks 登録判定 (40_子供・教育の場合)
-            if category == '40_子供・教育':
+            # Calendar / Tasks 登録判定
+            # 40_子供・教育、または大人用カテゴリ（10_マネー・税務, 30_ライフ・行政）で対象者が特定されている場合
+            should_register_calendar = (
+                category == '40_子供・教育' or
+                (category in ['10_マネー・税務', '30_ライフ・行政'] and analysis_result.get('target_adult'))
+            )
+            
+            if should_register_calendar:
                 self._register_calendar_and_tasks(image_data, new_file_name, file_id, analysis_result)
+            
+            # NotebookLM同期
+            if self.notebooklm_sync and self.notebooklm_sync.should_sync(category):
+                # OCRテキストを取得（Geminiで抽出）
+                ocr_text = self._extract_ocr_text(image_data)
+                if ocr_text:
+                    fiscal_year = analysis_result.get('fiscal_year')
+                    if not fiscal_year:
+                        date_str = analysis_result.get('date', '')
+                        fiscal_year = self.grade_manager.calculate_fiscal_year(date_str)
+                    
+                    success = self.notebooklm_sync.sync_file(
+                        file_id=file_id,
+                        file_name=new_file_name,
+                        category=category,
+                        ocr_text=ocr_text,
+                        date_str=analysis_result.get('date', ''),
+                        fiscal_year=fiscal_year
+                    )
+                    
+                    if not success:
+                        # 失敗時にTasks通知
+                        if self.tasks_client:
+                            error_task = {
+                                'title': f"[システム通知] NotebookLM同期エラー: {new_file_name}",
+                                'notes': f"NotebookLMへの同期に失敗しました。\n\nファイル: {new_file_name}\nID: {file_id}\n\n容量制限または権限を確認してください。",
+                                'due_date': datetime.now().strftime('%Y-%m-%d')
+                            }
+                            self.tasks_client.create_task(error_task)
+                            logger.info(f"同期エラー通知タスクを作成しました: {new_file_name}")
             
             return 'PROCESSED'
             
@@ -188,27 +247,77 @@ class FileSorter:
             logger.error(f"ファイル処理エラー: {e}")
             return 'ERROR'
     
+    def _extract_ocr_text(self, image_data: bytes) -> Optional[str]:
+        """
+        画像からOCRテキストを抽出（NotebookLM同期用）
+        
+        Args:
+            image_data: 画像バイナリデータ
+            
+        Returns:
+            抽出されたテキスト
+        """
+        prompt = """
+この画像の内容をすべてテキストとして抽出してください。
+書類の構造（見出し、段落、リストなど）をできるだけ保持してください。
+マークダウン形式で出力してください。
+"""
+        try:
+            import google.generativeai as genai
+            import base64
+            
+            # プレーンテキストで応答を得るためJSONモードを使わない
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            
+            image_b64 = base64.b64encode(image_data).decode('utf-8')
+            
+            response = model.generate_content([
+                {
+                    "mime_type": "image/jpeg",
+                    "data": image_b64
+                },
+                prompt
+            ])
+            
+            if response and response.text:
+                return response.text
+            return None
+        except Exception as e:
+            logger.error(f"OCRテキスト抽出エラー: {e}")
+            return None
+    
     def _analyze_document(
         self,
         image_data: bytes,
         file_name: str
     ) -> Optional[Dict]:
         """ドキュメントを解析"""
-        aliases_str = '\n'.join([
+        # 子供の名寄せルール
+        child_aliases_str = '\n'.join([
             f"{name}: {', '.join(aliases)}"
             for name, aliases in CHILD_ALIASES.items()
+        ])
+        
+        # 大人の名寄せルール
+        adult_aliases_str = '\n'.join([
+            f"{name}: {', '.join(aliases)}"
+            for name, aliases in ADULT_ALIASES.items()
         ])
         
         prompt = f"""
 あなたは家庭内書類の整理アシスタントです。以下の画像を解析し、JSON形式で回答してください。
 
 ## お子様の名寄せルール
-{aliases_str}
+{child_aliases_str}
+
+## 大人の名寄せルール
+{adult_aliases_str}
 
 ## 出力形式（必ずこのJSON形式で回答）
 {{
   "category": "カテゴリ名",
   "child_name": "お子様の名前（名寄せ後の正規名。複数または不明時は空文字）",
+  "target_adult": "大人の名前（名寄せ後の正規名。書類の宛先・対象者が大人の場合。不明時は空文字）",
   "target_grade_class": "対象となる学年やクラス名（例：小2、くるみ組、1年生）。固有名詞がない場合に抽出",
   "sub_category": "サブカテゴリ（categoryが40_子供・教育の場合のみ）",
   "is_photo": false,
@@ -231,6 +340,10 @@ class FileSorter:
 - 03_記録・作品・成績
 
 ## 判断基準
+- 書類の宛先や対象者が大人（祖父母、父、母など）の場合は target_adult に正規名を設定
+- 子供関連の書類は child_name に設定し、categoryを「40_子供・教育」に
+- 医療・健康関連、役所・公共関連は「30_ライフ・行政」に分類
+- 金銭・銀行・税務関連は「10_マネー・税務」に分類
 - is_photoがtrueの場合は、categoryを「50_写真・その他」にしてください
 - 日付が不明な場合は本日の日付を使用してください
 - confidence_scoreは0.0〜1.0の範囲で、解析結果の信頼度を示してください
@@ -240,6 +353,7 @@ class FileSorter:
 {file_name}
 """
         return self.ai_router.analyze_document(image_data, prompt)
+    
     
     def _get_destination_folder(self, result: Dict) -> Optional[str]:
         """移動先フォルダIDを取得"""
@@ -251,7 +365,29 @@ class FileSorter:
         if category == '40_子供・教育':
             return self._get_children_edu_folder(result)
         
+        # 年度サブフォルダ対象カテゴリ（10_マネー・税務, 30_ライフ・行政）
+        if category in CATEGORIES_WITH_YEAR_SUBFOLDER:
+            return self._get_folder_with_year_subfolder(category, result)
+        
         return CATEGORY_MAP.get(category, FOLDER_IDS['PHOTO_OTHER'])
+    
+    def _get_folder_with_year_subfolder(self, category: str, result: Dict) -> Optional[str]:
+        """年度サブフォルダ構造を作成（10_マネー・税務, 30_ライフ・行政用）"""
+        base_folder_id = CATEGORY_MAP.get(category)
+        if not base_folder_id:
+            return None
+        
+        # 年度フォルダ
+        date_str = result.get('date', '')
+        fiscal_year = self.grade_manager.calculate_fiscal_year(date_str)
+        
+        year_folder_id = self.drive_client.get_or_create_folder(
+            f"{fiscal_year}年度",
+            base_folder_id
+        )
+        
+        return year_folder_id
+    
     
     def _get_children_edu_folder(self, result: Dict) -> Optional[str]:
         """40_子供・教育用のフォルダ構造を作成"""
@@ -260,7 +396,9 @@ class FileSorter:
         # 解決済みのフォルダ名を使用（なければ child_name または デフォルト）
         folder_name = result.get('resolved_folder_name')
         if not folder_name:
-             folder_name = result.get('child_name', '共通・学校全般')
+            folder_name = result.get('child_name')
+        if not folder_name:  # 空文字列やNoneの場合
+            folder_name = '共通・学校全般'
 
         # 子供名フォルダ (または共有グループフォルダ)
         child_folder_id = self.drive_client.get_or_create_folder(
@@ -349,9 +487,14 @@ class FileSorter:
             # 単一の子供の場合
             target_children = analysis_result.get('target_children', [])
             fiscal_year = analysis_result.get('fiscal_year')
+            target_adult = analysis_result.get('target_adult', '')
             
             title_prefix = ""
-            if target_children and fiscal_year:
+            
+            # 大人の場合は正規名をそのままラベルとして使用
+            if target_adult:
+                title_prefix = f"[{target_adult}]"
+            elif target_children and fiscal_year:
                 # 複数の子供がいる場合は、それぞれ個別に登録するか、共有ラベルにするか
                 # ここでは共有グループのラベルがあればそれを使い、なければ列挙する
                 if analysis_result.get('resolved_emoji'):
