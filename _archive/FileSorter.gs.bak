@@ -1,0 +1,380 @@
+/**
+ * ============================================================
+ * FileSorter.gs - 家庭内書類管理システム（仕分け・整理用）
+ * ============================================================
+ * ScanSnapでスキャンしたPDF/画像をGeminiで解析し、
+ * カテゴリ別フォルダへ自動仕分け・リネームを行う。
+ * 
+ * ※ 設定値はすべて Config.gs に記載
+ * ============================================================
+ */
+
+// ============================================================
+// MAIN FUNCTION
+// ============================================================
+
+/**
+ * メイン処理：Inboxフォルダ内のファイルを解析・仕分け
+ * ※ トリガーにはこの関数を設定してください
+ */
+function runFileSorter() {
+  // 夜間停止チェック（1:00〜6:00）
+  if (isNightTime()) {
+    Logger.log('夜間停止時間帯のため処理をスキップします。');
+    return;
+  }
+
+  const sourceFolder = DriveApp.getFolderById(FOLDER_IDS.SOURCE);
+  const files = sourceFolder.getFiles();
+
+  while (files.hasNext()) {
+    const file = files.next();
+    try {
+      processFile(file);
+    } catch (error) {
+      Logger.log(`エラー（ファイル: ${file.getName()}）: ${error.message}`);
+      // エラー時はスキップして次のファイルへ
+    }
+  }
+
+  Logger.log('処理が完了しました。');
+}
+
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+/**
+ * 夜間（1:00〜6:00）かどうかをチェック
+ * @returns {boolean} 夜間の場合はtrue
+ */
+function isNightTime() {
+  const hour = new Date().getHours();
+  return hour >= 1 && hour < 6;
+}
+
+/**
+ * 日付文字列（YYYYMMDD）から日本の学校年度を取得
+ * ※ 4月始まり、1〜3月は前年度扱い
+ * @param {string} dateString - YYYYMMDD形式の日付
+ * @returns {number} 年度（例: 2025）
+ */
+function getFiscalYear(dateString) {
+  const year = parseInt(dateString.substring(0, 4), 10);
+  const month = parseInt(dateString.substring(4, 6), 10);
+  
+  // 1〜3月は前年度扱い
+  if (month >= 1 && month <= 3) {
+    return year - 1;
+  }
+  return year;
+}
+
+/**
+ * ファイルを処理：OCR → Gemini解析 → 移動・リネーム → シャドウコピー
+ * @param {GoogleAppsScript.Drive.File} file - 処理対象ファイル
+ */
+function processFile(file) {
+  const mimeType = file.getMimeType();
+  const fileName = file.getName();
+
+  // 対応ファイル形式をチェック
+  if (!isSupportedFile(mimeType)) {
+    Logger.log(`非対応のファイル形式をスキップ: ${fileName}`);
+    return;
+  }
+
+  Logger.log(`処理開始: ${fileName}`);
+
+  // OCRでテキスト抽出
+  const ocrText = extractTextWithOCR(file);
+  Logger.log(`OCRテキスト長: ${ocrText.length}文字`);
+
+  // Geminiで解析
+  const analysisResult = analyzeWithGemini(ocrText, fileName);
+  if (!analysisResult) {
+    Logger.log(`Gemini解析に失敗: ${fileName}`);
+    return;
+  }
+
+  Logger.log(`解析結果: ${JSON.stringify(analysisResult)}`);
+
+  // 移動先フォルダを決定
+  const destinationFolder = getDestinationFolder(analysisResult);
+
+  // 新しいファイル名を生成
+  const extension = getFileExtension(fileName);
+  const newFileName = `${analysisResult.date}_${analysisResult.summary}.${extension}`;
+
+  // ファイルを移動・リネーム
+  moveAndRenameFile(file, destinationFolder, newFileName);
+
+  Logger.log(`処理完了: ${fileName} → ${newFileName}`);
+
+  // NotebookLM用シャドウコピー作成（対象カテゴリの場合）
+  const targetCategories = ['20_プロジェクト・資産', '30_ライフ・行政', '40_子供・教育', '90_ライブラリ'];
+  if (targetCategories.includes(analysisResult.category) && !analysisResult.is_photo) {
+    try {
+      createShadowDoc(file, analysisResult);
+    } catch (error) {
+      Logger.log(`シャドウコピー作成エラー: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * 対応ファイル形式かチェック
+ * @param {string} mimeType - MIMEタイプ
+ * @returns {boolean} 対応している場合はtrue
+ */
+function isSupportedFile(mimeType) {
+  const supportedTypes = [
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/bmp'
+  ];
+  return supportedTypes.includes(mimeType);
+}
+
+/**
+ * Drive APIのOCR機能でテキスト抽出
+ * @param {GoogleAppsScript.Drive.File} file - 対象ファイル
+ * @returns {string} 抽出されたテキスト（抽出不可の場合は空文字）
+ */
+function extractTextWithOCR(file) {
+  try {
+    const fileId = file.getId();
+
+    // PDFまたは画像をGoogleドキュメントに変換（OCR）
+    const resource = {
+      title: `OCR_${file.getName()}_${Date.now()}`,
+      mimeType: MimeType.GOOGLE_DOCS
+    };
+
+    const ocrFile = Drive.Files.copy(resource, fileId, {
+      ocr: true,
+      ocrLanguage: 'ja'
+    });
+
+    // Googleドキュメントからテキストを取得
+    const doc = DocumentApp.openById(ocrFile.id);
+    const text = doc.getBody().getText().trim();
+
+    // 一時的なOCRドキュメントを削除
+    DriveApp.getFileById(ocrFile.id).setTrashed(true);
+
+    // テキストが極端に少ない場合は写真とみなす
+    if (text.length < 20) {
+      return '';
+    }
+
+    return text;
+  } catch (error) {
+    Logger.log(`OCRエラー: ${error.message}`);
+    return '';
+  }
+}
+
+/**
+ * Gemini APIで書類を解析
+ * @param {string} ocrText - OCRテキスト
+ * @param {string} fileName - 元のファイル名
+ * @returns {Object|null} 解析結果JSON
+ */
+function analyzeWithGemini(ocrText, fileName) {
+  const aliases = Object.entries(CHILD_ALIASES)
+    .map(([name, list]) => `${name}: ${list.join(', ')}`)
+    .join('\n');
+
+  const prompt = `
+あなたは家庭内書類の整理アシスタントです。以下のOCRテキストまたはファイル情報を解析し、JSON形式で回答してください。
+
+## お子様の名寄せルール
+${aliases}
+
+## 出力形式（必ずこのJSON形式で回答）
+{
+  "category": "カテゴリ名（以下のいずれか）",
+  "child_name": "お子様の名前（名寄せ後の正規名。複数または不明時は「共通・学校全般」）",
+  "sub_category": "サブカテゴリ（categoryが40_子供・教育の場合のみ）",
+  "is_photo": false,
+  "date": "YYYYMMDD形式の日付",
+  "summary": "要約（15文字以内、ファイル名に使用）"
+}
+
+## カテゴリ一覧
+- 10_マネー・税務（銀行、保険、税金、請求書、領収書）
+- 20_プロジェクト・資産（不動産、車、家電購入記録、修理記録）
+- 30_ライフ・行政（役所、医療、年金、マイナンバー）
+- 40_子供・教育（学校、塾、習い事のお便り）
+- 50_写真・その他（書類ではない写真、分類不能なもの）
+- 90_ライブラリ（家電の取扱説明書、ガイドブック、マニュアル類）
+
+## サブカテゴリ（40_子供・教育の場合のみ使用）
+- 01_お便り・スケジュール（行事予定、お知らせ）
+- 02_提出・手続き・重要（提出書類、申込書）
+- 03_記録・作品・成績（成績表、作品、賞状）
+
+## 判断基準
+- is_photoがtrueの場合は、categoryを「50_写真・その他」にしてください
+- OCRテキストが空または意味をなさない場合は、is_photoをtrueにしてください
+- 日付が不明な場合は本日の日付を使用してください
+
+## 入力情報
+ファイル名: ${fileName}
+
+OCRテキスト:
+${ocrText || '（テキストなし - 写真の可能性）'}
+`;
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    
+    const payload = {
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        responseMimeType: 'application/json'
+      }
+    };
+
+    const response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    const result = JSON.parse(response.getContentText());
+    
+    if (result.error) {
+      Logger.log(`Gemini APIエラー: ${result.error.message}`);
+      return null;
+    }
+
+    const content = result.candidates[0].content.parts[0].text;
+    return JSON.parse(content);
+  } catch (error) {
+    Logger.log(`Gemini解析エラー: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * 解析結果に基づき移動先フォルダを取得・作成
+ * @param {Object} result - Gemini解析結果
+ * @returns {GoogleAppsScript.Drive.Folder} 移動先フォルダ
+ */
+function getDestinationFolder(result) {
+  // is_photoがtrueまたはカテゴリが50の場合
+  if (result.is_photo || result.category === '50_写真・その他') {
+    return DriveApp.getFolderById(FOLDER_IDS.PHOTO_OTHER);
+  }
+
+  // 40_子供・教育の場合は年度フォルダ構造を作成
+  if (result.category === '40_子供・教育') {
+    const baseFolder = DriveApp.getFolderById(FOLDER_IDS.CHILDREN_EDU);
+    const childFolder = getOrCreateFolder(baseFolder, result.child_name || '共通・学校全般');
+    
+    // 年度フォルダを作成（日本の学校年度: 4月始まり）
+    const fiscalYear = getFiscalYear(result.date);
+    const yearFolder = getOrCreateFolder(childFolder, `${fiscalYear}年度`);
+    
+    const subCategory = result.sub_category || '01_お便り・スケジュール';
+    return getOrCreateFolder(yearFolder, subCategory);
+  }
+
+  // その他のカテゴリ（年度フォルダなし、直下へ）
+  const folderId = CATEGORY_MAP[result.category];
+  if (folderId) {
+    return DriveApp.getFolderById(folderId);
+  }
+
+  // デフォルトは写真・その他
+  return DriveApp.getFolderById(FOLDER_IDS.PHOTO_OTHER);
+}
+
+/**
+ * NotebookLM用シャドウドキュメントを作成
+ * PDF/画像をOCRでGoogleドキュメントに変換して保存
+ * カテゴリ別・年度別にサブフォルダを作成
+ * @param {GoogleAppsScript.Drive.File} file - 元ファイル（移動・リネーム後）
+ * @param {Object} result - Gemini解析結果
+ */
+function createShadowDoc(file, result) {
+  const fileId = file.getId();
+  const docName = `【${result.category}】${result.date}_${result.summary}`;
+  
+  // 保存先フォルダを決定
+  const syncFolder = DriveApp.getFolderById(FOLDER_IDS.NOTEBOOKLM_SYNC);
+  let destFolder;
+  
+  if (result.category === '40_子供・教育') {
+    // 40_子供・教育は年度別に分類
+    const categoryFolder = getOrCreateFolder(syncFolder, result.category);
+    const fiscalYear = getFiscalYear(result.date);
+    destFolder = getOrCreateFolder(categoryFolder, `${fiscalYear}年度`);
+  } else {
+    // その他のカテゴリは直下に保存
+    destFolder = getOrCreateFolder(syncFolder, result.category);
+  }
+  
+  // Drive APIでPDF/画像をGoogleドキュメントに変換（OCR）
+  const resource = {
+    title: docName,
+    parents: [{ id: destFolder.getId() }]
+  };
+
+  const shadowDoc = Drive.Files.copy(resource, fileId, {
+    convert: true,
+    ocr: true,
+    ocrLanguage: 'ja'
+  });
+
+  Logger.log(`シャドウドキュメント作成: ${docName} (ID: ${shadowDoc.id})`);
+}
+
+/**
+ * サブフォルダを取得または作成
+ * @param {GoogleAppsScript.Drive.Folder} parent - 親フォルダ
+ * @param {string} name - フォルダ名
+ * @returns {GoogleAppsScript.Drive.Folder} サブフォルダ
+ */
+function getOrCreateFolder(parent, name) {
+  const folders = parent.getFoldersByName(name);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return parent.createFolder(name);
+}
+
+/**
+ * ファイル拡張子を取得
+ * @param {string} fileName - ファイル名
+ * @returns {string} 拡張子（小文字）
+ */
+function getFileExtension(fileName) {
+  const parts = fileName.split('.');
+  return parts.length > 1 ? parts.pop().toLowerCase() : 'pdf';
+}
+
+/**
+ * ファイルを移動・リネーム
+ * @param {GoogleAppsScript.Drive.File} file - 対象ファイル
+ * @param {GoogleAppsScript.Drive.Folder} destFolder - 移動先フォルダ
+ * @param {string} newName - 新しいファイル名
+ */
+function moveAndRenameFile(file, destFolder, newName) {
+  // リネーム
+  file.setName(newName);
+
+  // 現在の親フォルダから削除し、新しいフォルダに追加
+  const parents = file.getParents();
+  while (parents.hasNext()) {
+    parents.next().removeFile(file);
+  }
+  destFolder.addFile(file);
+}
