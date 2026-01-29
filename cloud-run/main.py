@@ -12,6 +12,8 @@ from modules.ai_router import AIRouter
 from modules.pdf_processor import PDFProcessor
 from modules.photos_client import PhotosClient
 from modules.drive_client import DriveClient
+from modules.calendar_client import CalendarClient
+from modules.tasks_client import TasksClient
 from modules.file_sorter import FileSorter
 
 # ロギング設定
@@ -25,12 +27,14 @@ ai_router = None
 pdf_processor = None
 photos_client = None
 drive_client = None
+calendar_client = None
+tasks_client = None
 file_sorter = None
 
 
 def init_modules():
     """モジュールを初期化"""
-    global ai_router, pdf_processor, photos_client, drive_client, file_sorter
+    global ai_router, pdf_processor, photos_client, drive_client, calendar_client, tasks_client, file_sorter
     
     if ai_router is None:
         logger.info("モジュールを初期化中...")
@@ -45,12 +49,30 @@ def init_modules():
         except Exception as e:
             logger.warning(f"Google Photos APIクライアント初期化失敗: {e}")
             photos_client = None
+
+        # Google Calendar API
+        try:
+            calendar_client = CalendarClient()
+            logger.info("Google Calendar APIクライアント初期化成功")
+        except Exception as e:
+            logger.warning(f"Google Calendar APIクライアント初期化失敗: {e}")
+            calendar_client = None
+
+        # Google Tasks API
+        try:
+            tasks_client = TasksClient()
+            logger.info("Google Tasks APIクライアント初期化成功")
+        except Exception as e:
+            logger.warning(f"Google Tasks APIクライアント初期化失敗: {e}")
+            tasks_client = None
         
         file_sorter = FileSorter(
             ai_router,
             pdf_processor,
             drive_client,
-            photos_client
+            photos_client,
+            calendar_client,
+            tasks_client
         )
         logger.info("モジュール初期化完了")
 

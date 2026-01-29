@@ -67,13 +67,14 @@ SUB_CATEGORIES = [
     '03_記録・作品・成績'
 ]
 
-# CalendarSync設定
+
+# CalendarSync Configuration
 TARGET_SUBFOLDER_NAMES = [
     '01_お便り・スケジュール',
     '02_提出・手続き・重要'
 ]
 
-CALENDAR_ID = '639243bb722810f6fbe8f95b9dc57adf65677a53810d7fcdc76eef0fc4845792@group.calendar.google.com'
+CALENDAR_ID = os.getenv('CALENDAR_ID', '639243bb722810f6fbe8f95b9dc57adf65677a53810d7fcdc76eef0fc4845792@group.calendar.google.com')
 
 # API設定
 API_CONFIG = {

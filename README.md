@@ -1,7 +1,7 @@
 # HomeDocManager (Smart Document Filing System)
 
 Gemini AIを活用して、Googleドライブ上のドキュメント（PDF/画像）を自動で解析・リネーム・分別するシステムです。
-また、領収書やチラシなどの画像は Googleフォト へ自動で同期されます。
+また、領収書やチラシなどの画像は Googleフォト へ自動で同期され、行事系ドキュメントは Googleカレンダー/Tasks へ自動登録されます。
 
 ## システム構成
 
@@ -14,15 +14,35 @@ Gemini AIを活用して、Googleドライブ上のドキュメント（PDF/画�
   - **Gemini 1.5/3.0 API:** 画像/PDFの内容を解析し、ファイル名とカテゴリを決定
   - **Google Drive API:** ファイルの移動・リネーム
   - **Google Photos API:** 画像のアップロード
+  - **Google Calendar/Tasks API:** 行事やタスクの自動抽出と登録
+    - 子供の名前が検出された場合、イベント名に `【名前】` を付与
+    - 指定されたカレンダーIDへの登録
   - **Secret Manager:** APIキーなどの機密情報管理
   - **Pub/Sub:** 非同期処理のためのメッセージング
 
-### 2. Triggers (Google Apps Script)
-- **場所:** `/cloud-run/scripts/Trigger.gs` (およびルート直下の `.gs` ファイル)
-- **機能:**
-  - Googleドライブの特定フォルダ（`00_受領箱`）を監視
-  - 新規ファイルがアップロードされると、Cloud Runのエンドポイントへ通知（Pub/Sub経由または直接HTTP呼び出し）
-  - `CalendarSync.gs`: 書類から日付情報を抽出してカレンダー登録（※旧機能または併用）
+### 2. Triggers / Secondary Logic (GAS)
+- **Trigger.gs:** (`/cloud-run/scripts/Trigger.gs`)
+  - Googleドライブの `00_Inbox` フォルダを監視
+  - 新規ファイルがアップロードされると Cloud Run へ Pub/Sub 通知を行う
+- **NotebookLMSync.gs:** (`/NotebookLMSync.gs`)
+  - 処理済みファイルを NotebookLM 用に OCR 変換（ドキュメント化）し、専用フォルダへ同期
+  - **設定ファイル:** `Config.gs`
+
+## ディレクトリ構造
+
+```
+HomeDocManager/
+├── cloud-run/              # Pythonアプリケーション本体 (Core)
+│   ├── modules/            # 各種クライアント・ロジック (AIRouter, Calendar, Tasksなど)
+│   ├── config/             # Python設定ファイル (settings.py)
+│   ├── scripts/            # デプロイ用スクリプト & GASトリガーコード
+│   ├── Dockerfile          # コンテナ定義
+│   └── requirements.txt    # Python依存ライブラリ
+├── NotebookLMSync.gs       # (GAS) NotebookLM連携用スクリプト
+├── Config.gs               # (GAS) NotebookLMSync用設定
+├── _archive/               # 過去の遺産コード
+└── README.md               # 本ファイル
+```
 
 ## セットアップ手順
 
@@ -39,24 +59,12 @@ Gemini AIを活用して、Googleドライブ上のドキュメント（PDF/画�
 ```
 ※ APIキーなどの環境変数は GCP Secret Manager に設定されています。
 
-## ディレクトリ構造
-
-```
-HomeDocManager/
-├── cloud-run/              # Pythonアプリケーション本体
-│   ├── modules/            # AIRouter, DriveClient, PhotosClientなどのモジュール
-│   ├── config/             # 設定ファイル (settings.py)
-│   ├── scripts/            # デプロイ用スクリプト & GASトリガーコード
-│   ├── Dockerfile          # コンテナ定義
-│   └── requirements.txt    # Python依存ライブラリ
-├── CalendarSync.gs         # (GAS) カレンダー連携用スクリプト
-├── Config.gs               # (GAS) 共有設定
-└── NotebookLMSync.gs       # (GAS) NotebookLM連携用スクリプト
-```
-
 ## 更新履歴
-- **v1.0.0**: Cloud Run移行完了。Gemini API連携、Google Photosアップロード機能、堅牢なリトライロジックを実装。
-- **Revision 00017-00018**: 安定稼働バージョン（メモリ最適化済み）。
+- **v1.2.0 (2026-01-29)**: 
+  - CalendarSync機能をGASからCloud Runへ完全移行
+  - イベント・タスク登録時に子供の名前を自動付与する機能追加
+  - カレンダーIDの指定機能追加
+- **v1.0.0**: Cloud Run移行完了。Gemini API連携、Google Photosアップロード機能。
 
 ## ライセンス
 Private Use Only
