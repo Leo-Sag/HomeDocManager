@@ -1,0 +1,10 @@
+# HomeDocManager Project Rules
+
+You are working on the HomeDocManager project.
+Before providing any code or answers, you MUST review the architecture and operational guidelines in `AI_CONTEXT.md` located in the project root.
+
+## Core Guidelines
+1. **Architecture**: Cloud Run (Python) + GAS. Do not mix logic locations without consulting `AI_CONTEXT.md`.
+2. **Deployment**: Always use `cloud-run/scripts/deploy.ps1` for Cloud Run updates.
+3. **Critical Logic**: The `googleapiclient` retry logic in `drive_client.py` includes forced service re-initialization. This is critical for preventing "Broken pipe" errors. DO NOT REMOVE.
+4. **Secrets**: Python code must sanitize secrets (`.strip()`) loaded from env vars.
