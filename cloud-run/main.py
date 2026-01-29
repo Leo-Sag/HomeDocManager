@@ -105,8 +105,8 @@ def handle_pubsub():
         # ファイル処理を実行
         result = file_sorter.process_file(file_id)
         
-        if result:
-            logger.info(f"File processed successfully: {file_id}")
+        if result in ['PROCESSED', 'SKIPPED']:
+            logger.info(f"File processed successfully ({result}): {file_id}")
             return 'OK', 200
         else:
             logger.error(f"File processing failed: {file_id}")
@@ -139,8 +139,8 @@ def test_endpoint():
         logger.info(f"Test processing file: {file_id}")
         result = file_sorter.process_file(file_id)
         
-        if result:
-            return {'status': 'success', 'file_id': file_id}, 200
+        if result in ['PROCESSED', 'SKIPPED']:
+            return {'status': 'success', 'result': result, 'file_id': file_id}, 200
         else:
             return {'status': 'failed', 'file_id': file_id}, 500
             
