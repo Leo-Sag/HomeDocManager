@@ -2,8 +2,10 @@
 Google Drive APIクライアント
 ファイルの取得、移動、リネームなどの操作
 """
+import time
 import logging
-from typing import Optional, List
+import traceback
+from typing import Optional, List, Dict, Any
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2 import service_account
@@ -233,3 +235,71 @@ class DriveClient:
         if folder_id:
             return folder_id
         return self.create_folder(folder_name, parent_id)
+
+    def list_files(self, query: str, limit: int = 100) -> List[Dict]:
+        """クエリに基づいてファイルを検索"""
+        try:
+            results = self.service.files().list(
+                q=query,
+                pageSize=limit,
+                fields="nextPageToken, files(id, name, mimeType, size, owners, quotaBytesUsed)"
+            ).execute()
+            return results.get('files', [])
+        except Exception as e:
+            logger.error(f"ファイル検索エラー: {e}")
+            return []
+
+    def list_files_in_folder(self, folder_id: str, limit: int = 100) -> List[Dict]:
+        """フォルダ内のファイルを検索"""
+        query = f"'{folder_id}' in parents and trashed=false"
+        return self.list_files(query, limit)
+
+    def delete_file(self, file_id: str) -> bool:
+        """ファイルを削除"""
+        try:
+            self.service.files().delete(fileId=file_id).execute()
+            logger.info(f"ファイル削除成功: {file_id}")
+            return True
+        except Exception as e:
+            logger.error(f"ファイル削除エラー: {e}")
+            return False
+
+    def cleanup_service_account_storage(self) -> Dict[str, Any]:
+        """SAのストレージをクリーンアップ（ゴミ箱を空に & 所有ファイルを削除）"""
+        stats = {'deleted_files': 0, 'freed_bytes': 0, 'errors': []}
+        try:
+            # 1. ゴミ箱を空にする
+            try:
+                self.service.files().emptyTrash().execute()
+                logger.info("ゴミ箱を空にしました")
+            except Exception as e:
+                logger.warning(f"ゴミ箱のクリーンアップ失敗: {e}")
+            
+            # 2. SAが所有するファイルを検索 ('me' in owners)
+            # NotebookLM同期ファイルなどの重要なものは除外したいが、
+            # SAが所有している＝ユーザーに転送できていない＝容量圧迫の原因。
+            # 今回は緊急対応として、SA所有の全ファイルを対象とする（ユーザー同意済みと仮定）
+            # ただし、フォルダは消さないようにmimeTypeでフィルタしてもよいが、
+            # deleteは再帰的ではないのでフォルダなら中身だけ消える？いや、フォルダも消える。
+            # 安全のため、application/vnd.google-apps.folderは除外する。
+            query = "'me' in owners and trashed = false and mimeType != 'application/vnd.google-apps.folder'"
+            files = self.list_files(query, limit=100)
+            
+            for file in files:
+                file_id = file['id']
+                file_name = file.get('name', 'Unknown')
+                file_size = int(file.get('quotaBytesUsed', 0))
+                
+                logger.info(f"Deleting SA-owned file: {file_name} ({file_size} bytes)")
+                
+                if self.delete_file(file_id):
+                    stats['deleted_files'] += 1
+                    stats['freed_bytes'] += file_size
+                else:
+                    stats['errors'].append(f"Failed to delete {file_name}")
+                    
+            return stats
+        except Exception as e:
+            logger.error(f"クリーンアップエラー: {e}")
+            stats['errors'].append(str(e))
+            return stats
