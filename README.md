@@ -9,6 +9,7 @@ NotebookLMとの連携機能も搭載し、OCR結果を自動的にドキュメ�
 本システムは **Google Cloud Run (Python)** を核として動作します。不要になったGASコードはアーカイブされています。
 
 ### 1. Core Logic (Cloud Run)
+
 - **場所:** `/cloud-run`
 - **技術:** Python 3.11, Flask, Gunicorn
 - **機能:**
@@ -21,6 +22,7 @@ NotebookLMとの連携機能も搭載し、OCR結果を自動的にドキュメ�
   - **NotebookLM Sync:** 年別・カテゴリ別の累積ドキュメント自動生成
 
 ### 2. Triggers
+
 - **Trigger Endpoint:** `/trigger/inbox` (Cloud Run)
   - Inbox内のファイルを一括処理するためのエンドポイント
 - **Legacy Trigger (Reference):** `/cloud-run/scripts/Trigger.gs`
@@ -41,13 +43,17 @@ HomeDocManager/
 ```
 
 ## 更新履歴
+
 - **v2.0.0 (2026-01-30)**:
   - **Full Cloud Run Migration**: 全機能をPython化しGASを廃止（アーカイブ化）
   - **Adult Document Support**: 大人（祖父母・両親）の書類仕分けに対応
   - **NotebookLM Sync V2**: 累積ドキュメント方式に変更、ソースリンク自動挿入
   - **Admin Tools**: 容量クリーンアップ、Inboxトリガーエンドポイント実装
-- **v1.2.0 (2026-01-29)**: CalendarSync機能をGASからCloud Runへ移行
-- **v1.0.0**: Cloud Run移行完了
+- **v2.1.0 (2026-01-31)**:
+  - **NotebookLM Sync (Markdown)**: 累積ドキュメントをMarkdown記法を使用したGoogleドキュメントに変更
+  - **Storage Optimization**: サービスアカウントのストレージ容量問題に対応
+- **v2.0.0 (2026-01-30)**:
 
 ## ライセンス
+
 Private Use Only
