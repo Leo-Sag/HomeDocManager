@@ -1,58 +1,68 @@
-# HomeDocManager (Smart Document Filing System)
+# HomeDocManager (Smart Document Filing System) v1.0.0
 
 Gemini AIを活用して、Googleドライブ上のドキュメント（PDF/画像）を自動で解析・リネーム・分別するシステムです。
-また、領収書やチラシなどの画像は Googleフォト へ自動で同期され、行事系ドキュメントは Googleカレンダー/Tasks へ自動登録されます。
-NotebookLMとの連携機能も搭載し、OCR結果を自動的にドキュメント化して蓄積します。
+Go言語によるリファクタリングにより、高速かつ堅牢な処理を実現しました。
+
+## 主な機能
+
+### 1. インテリジェントなファイル自動仕分け
+
+- **自動解析**: Gemini 1.5 Flash/Pro を使用し、内容を詳細に解析。
+- **リネーム・移動**: 解析結果に基づき、適切なファイル名に変更し、年度・カテゴリ別のフォルダへ自動移動。
+- **Inbox限定処理**: `00_Inbox` フォルダに入った新規ファイルのみを処理対象とし、意図しない再移動（無限ループ）を防止。
+
+### 2. カレンダー・タスク連携
+
+- **行事抽出**: プリント等の内容から日付・行事名を抽出し、Google カレンダーへ登録。
+- **タスク登録**: 提出期限などを抽出し、Google Tasks へ登録。
+- **タスクマージ**: 同一日の同じ内容のタスクを自動的に 1 つにマージして登録（ granular な登録を防止）。
+- **児童特定優先ロジック**: 複数児童が含まれるフォルダでも、OCR 結果（学年等）から最適な児童を自動特定。
+
+### 3. NotebookLM 同期機能
+
+- **Markdown生成**: 解析結果を Markdown 形式で統合ドキュメントに蓄積。
+- **重複防止**: Mutex による排他制御を導入し、統合ドキュメントの重複作成を防止。
+- **共有ドライブ対応**: 共有ドライブ上のドキュメントも同期対象としてサポート。
+
+### 4. 写真・画像管理
+
+- **Google フォト同期**: 領収書や写真画像を Google フォトへ自動アップロード。
+
+### 5. 管理・運用ツール
+
+- **ヘルスチェック**: `/health` エンドポイントによる動作確認。
+- **インボックス強制スキャン**: `/trigger/inbox` により、Inbox 内のファイルを一括手動処理。
+- **ストレージ容量解決**: ユーザーの OAuth トークンを使用することで、サービスアカウントの容量制限を回避。
 
 ## システム構成
 
-本システムは **Google Cloud Run (Python)** を核として動作します。不要になったGASコードはアーカイブされています。
-
-### 1. Core Logic (Cloud Run)
-
-- **場所:** `/cloud-run`
-- **技術:** Python 3.11, Flask, Gunicorn
-- **機能:**
-  - **Gemini 1.5 Pro/Flash:** 画像/PDFの内容を解析し、ファイル名とカテゴリを決定
-  - **Google Drive API:** ファイルの移動・リネーム・NotebookLM用ドキュメント作成
-  - **Google Photos API:** 画像のアップロード
-  - **Google Calendar/Tasks API:** 行事やタスクの自動抽出と登録
-    - 子供の名前（クラス名）検出機能付き
-    - エラー時のTasks通知機能
-  - **NotebookLM Sync:** 年別・カテゴリ別の累積ドキュメント自動生成
-
-### 2. Triggers
-
-- **Trigger Endpoint:** `/trigger/inbox` (Cloud Run)
-  - Inbox内のファイルを一括処理するためのエンドポイント
-- **Legacy Trigger (Reference):** `/cloud-run/scripts/Trigger.gs`
-  - 過去のGASトリガーコード（参考用）
+- **言語**: Go 1.23
+- **プラットフォーム**: Google Cloud Run
+- **インフラ**: Google Pub/Sub (Drive変更通知), Secret Manager (認証情報管理)
 
 ## ディレクトリ構造
 
 ```
 HomeDocManager/
-├── cloud-run/              # Pythonアプリケーション本体 (Core)
-│   ├── modules/            # 各種クライアント・ロジック
-│   ├── config/             # 設定ファイル (settings.py)
-│   ├── scripts/            # デプロイ用スクリプト
-│   ├── Dockerfile          # コンテナ定義
-│   └── requirements.txt    # Python依存ライブラリ
-├── _archive/               # 過去の遺産コード (GAS版など)
+├── cloud-run-go/           # Goアプリケーション本体 (v1.0.0 Core)
+│   ├── cmd/                # エントリポイント (server)
+│   ├── internal/           # 内部ロジック (service, handler, config, model)
+│   ├── tools/              # 運用ツール (setup_oauth, etc.)
+│   └── Dockerfile          # コンテナ定義
+├── _archive/               # 過去の遺産コード
+│   ├── python_v0/          # 旧Python版
+│   └── maintenance/        # メンテナンス用一時ファイル
 └── README.md               # 本ファイル
 ```
 
-## 更新履歴
+## セットアップ
 
-- **v2.0.0 (2026-01-30)**:
-  - **Full Cloud Run Migration**: 全機能をPython化しGASを廃止（アーカイブ化）
-  - **Adult Document Support**: 大人（祖父母・両親）の書類仕分けに対応
-  - **NotebookLM Sync V2**: 累積ドキュメント方式に変更、ソースリンク自動挿入
-  - **Admin Tools**: 容量クリーンアップ、Inboxトリガーエンドポイント実装
-- **v2.1.0 (2026-01-31)**:
-  - **NotebookLM Sync (Markdown)**: 累積ドキュメントをMarkdown記法を使用したGoogleドキュメントに変更
-  - **Storage Optimization**: サービスアカウントのストレージ容量問題に対応
-- **v2.0.0 (2026-01-30)**:
+1. **認証設定**:
+   - `cloud-run-go/tools/setup_oauth.go` を実行し、ブラウザで Google Drive/Photos/Calendar/Tasks の権限を許可します。
+   - 取得したリフレッシュトークンを Secret Manager の `OAUTH_REFRESH_TOKEN` に設定します。
+
+2. **デプロイ**:
+   - `sh deploy-cloudbuild.sh` を実行して Cloud Run にデプロイします。
 
 ## ライセンス
 
