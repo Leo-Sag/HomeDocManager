@@ -177,7 +177,8 @@ class DriveClient:
             
             folder = self.service.files().create(
                 body=file_metadata,
-                fields='id'
+                fields='id',
+                supportsAllDrives=True
             ).execute()
             
             logger.info(f"フォルダ作成成功: {folder_name}")
@@ -205,12 +206,16 @@ class DriveClient:
             query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
             results = self.service.files().list(
                 q=query,
-                fields='files(id, name)'
+                fields='files(id, name)',
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
             ).execute()
             
             files = results.get('files', [])
             if files:
+                logger.info(f"既存フォルダ発見: {folder_name} ({files[0]['id']})")
                 return files[0]['id']
+            logger.info(f"フォルダが見つかりません: {folder_name} in {parent_id}")
             return None
         except Exception as e:
             logger.error(f"フォルダ検索エラー: {e}")

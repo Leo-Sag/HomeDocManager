@@ -111,15 +111,15 @@ class NotebookLMSync:
         ocr_text: str,
         category: str
     ) -> str:
-        """エントリテキストをフォーマット（カテゴリ名を含む）"""
+        """エントリテキストをMarkdown形式でフォーマット（カテゴリ名を含む）"""
         file_url = f"https://drive.google.com/file/d/{file_id}/view"
         
         entry = f"""
+---
 
-========================================
-📄 {formatted_date} - [{category}] {file_name}
-🔗 {file_url}
-========================================
+## 📄 {formatted_date} - [{category}] {file_name}
+
+🔗 [元ファイルを開く]({file_url})
 
 {ocr_text}
 
@@ -130,6 +130,7 @@ class NotebookLMSync:
         """
         年度別統合ドキュメントを取得または作成
         全カテゴリを1つのドキュメントに統合（NotebookLM用）
+        内容はMarkdown形式で記述
         
         Args:
             fiscal_year: 年度
@@ -150,7 +151,7 @@ class NotebookLMSync:
         if doc_id:
             return doc_id
         
-        # 新規作成（同期フォルダ直下）- Drive APIを使用
+        # 新規作成（同期フォルダ直下）- Googleドキュメントとして作成
         return self._create_unified_doc(doc_name, sync_folder_id, fiscal_year)
     
     def _find_doc_by_name(self, doc_name: str, parent_id: str) -> Optional[str]:
@@ -165,13 +166,16 @@ class NotebookLMSync:
             ドキュメントID（見つからない場合はNone）
         """
         try:
+            # Googleドキュメントを検索
             query = (
                 f"name='{doc_name}' and '{parent_id}' in parents "
                 f"and mimeType='application/vnd.google-apps.document' and trashed=false"
             )
             results = self.drive_client.service.files().list(
                 q=query,
-                fields='files(id, name)'
+                fields='files(id, name)',
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
             ).execute()
             
             files = results.get('files', [])
@@ -190,26 +194,19 @@ class NotebookLMSync:
     ) -> Optional[str]:
         """
         Drive APIを使用して新しい統合ドキュメントを作成（全カテゴリ用）
+        サービスアカウントのストレージ制限を回避するため、
+        空のGoogleドキュメントを作成→所有権転送→Markdown形式で内容追記
         
         Args:
-            doc_name: ドキュメント名
+            doc_name: ファイル名（.md拡張子を含む）
             parent_id: 親フォルダID
             fiscal_year: 年度
             
         Returns:
-            作成されたドキュメントID
+            作成されたファイルID
         """
         try:
-            # ヘッダーテキスト
-            header_text = f"""# {fiscal_year}年度 全記録
-
-このドキュメントは NotebookLM 用に自動生成された書類OCRテキストの統合ファイルです。
-各エントリには [カテゴリ名] が付与されています。
-
----
-
-"""
-            # Drive APIでGoogleドキュメントを作成
+            # Googleドキュメントとして作成（SA容量問題を回避）
             file_metadata = {
                 'name': doc_name,
                 'mimeType': 'application/vnd.google-apps.document',
@@ -219,16 +216,13 @@ class NotebookLMSync:
             # 空のドキュメントを作成
             doc = self.drive_client.service.files().create(
                 body=file_metadata,
-                fields='id'
+                fields='id',
+                supportsAllDrives=True
             ).execute()
             
             doc_id = doc.get('id')
             
-            # ヘッダーを追加
-            self._append_to_doc(doc_id, header_text)
-            
             # オーナー権限をユーザーに転送（サービスアカウントの容量制限回避）
-            # NOTE: transferOwnership=True は role='owner' の場合に必須
             from config.settings import NOTEBOOKLM_OWNER_EMAIL
             if NOTEBOOKLM_OWNER_EMAIL:
                 try:
@@ -241,20 +235,29 @@ class NotebookLMSync:
                         },
                         transferOwnership=True
                     ).execute()
-                    logger.info(f"ドキュメントのオーナー権限を転送しました: {NOTEBOOKLM_OWNER_EMAIL}")
+                    logger.info(f"ファイルのオーナー権限を転送しました: {NOTEBOOKLM_OWNER_EMAIL}")
                 except Exception as e:
                     logger.warning(f"オーナー権限の転送に失敗しました（容量制限に注意）: {e}")
+            
+            # ヘッダーテキスト（Markdown形式）- 所有権転送後に追記
+            header_text = f"""# {fiscal_year}年度 全記録
 
-            logger.info(f"統合ドキュメント作成: {doc_name}")
+> このファイルは NotebookLM 用に自動生成された書類OCRテキストの統合ファイルです。
+> 各エントリには [カテゴリ名] が付与されています。
+
+"""
+            self._append_to_doc(doc_id, header_text)
+
+            logger.info(f"統合ドキュメント作成（Markdown形式）: {doc_name}")
             return doc_id
             
         except Exception as e:
-            logger.error(f"ドキュメント作成エラー: {e}")
+            logger.error(f"ファイル作成エラー: {e}")
             return None
     
     def _append_to_doc(self, doc_id: str, text: str) -> bool:
         """
-        ドキュメントの末尾にテキストを追記
+        Googleドキュメントの末尾にテキストを追記
         Drive APIのexport/updateを使用
         
         Args:
