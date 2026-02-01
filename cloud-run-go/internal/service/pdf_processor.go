@@ -23,7 +23,7 @@ func (p *PDFProcessor) IsPDF(mimeType string) bool {
 }
 
 // ConvertPDFToImages はPDFを画像（JPEG）に変換
-func (p *PDFProcessor) ConvertPDFToImages(pdfBytes []byte) ([][]byte, error) {
+func (p *PDFProcessor) ConvertPDFToImages(pdfBytes []byte, dpi int) ([][]byte, error) {
 	// 一時ディレクトリ作成
 	tmpDir, err := os.MkdirTemp("", "pdfconv-*")
 	if err != nil {
@@ -37,10 +37,10 @@ func (p *PDFProcessor) ConvertPDFToImages(pdfBytes []byte) ([][]byte, error) {
 		return nil, fmt.Errorf("failed to write temp pdf: %w", err)
 	}
 
-	// pdftoppm を実行 (JPEG形式、200dpi)
-	// pdftoppm -jpeg -r 200 input.pdf output
+	// pdftoppm を実行 (JPEG形式、指定のdpi)
+	// pdftoppm -jpeg -r [dpi] input.pdf output
 	outputPrefix := filepath.Join(tmpDir, "page")
-	cmd := exec.Command("pdftoppm", "-jpeg", "-r", "200", pdfPath, outputPrefix)
+	cmd := exec.Command("pdftoppm", "-jpeg", "-r", fmt.Sprintf("%d", dpi), pdfPath, outputPrefix)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

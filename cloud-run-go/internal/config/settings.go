@@ -204,6 +204,15 @@ var SupportedMimeTypes = []string{
 	"image/bmp",
 }
 
+// 処理解像度（DPI）設定
+var DPI = struct {
+	Internal int // Gemini解析・OCR用
+	Photos   int // Google Photosアップロード用
+}{
+	Internal: 200,
+	Photos:   300,
+}
+
 // getEnv は環境変数を取得し、存在しない場合はデフォルト値を返す
 func GetEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

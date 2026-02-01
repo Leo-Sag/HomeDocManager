@@ -1,4 +1,4 @@
-# HomeDocManager (Smart Document Filing System) v1.0.0
+# HomeDocManager (Smart Document Filing System) v1.1.0
 
 Gemini AIを活用して、Googleドライブ上のドキュメント（PDF/画像）を自動で解析・リネーム・分別するシステムです。
 Go言語によるリファクタリングにより、高速かつ堅牢な処理を実現しました。
@@ -27,6 +27,8 @@ Go言語によるリファクタリングにより、高速かつ堅牢な処理
 ### 4. 写真・画像管理
 
 - **Google フォト同期**: 領収書や写真画像を Google フォトへ自動アップロード。
+- **高画質変換 (NEW)**: PDFから画像への変換時、Google フォト用には **300 DPI** を使用し、鮮明な画質で保存。
+- **トークン最適化 (NEW)**: Gemini解析用には、PDFをネイティブ形式（または200 DPI）で処理することで、APIのトークン消費を抑制。
 
 ### 5. 管理・運用ツール
 
@@ -42,9 +44,9 @@ Go言語によるリファクタリングにより、高速かつ堅牢な処理
 
 ## ディレクトリ構造
 
-```
+```text
 HomeDocManager/
-├── cloud-run-go/           # Goアプリケーション本体 (v1.0.0 Core)
+├── cloud-run-go/           # Goアプリケーション本体 (v1.1.0 Core)
 │   ├── cmd/                # エントリポイント (server)
 │   ├── internal/           # 内部ロジック (service, handler, config, model)
 │   ├── tools/              # 運用ツール (setup_oauth, etc.)

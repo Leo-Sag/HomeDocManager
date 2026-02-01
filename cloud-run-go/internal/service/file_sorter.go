@@ -310,7 +310,7 @@ func (fs *FileSorter) performAdditionalActions(
 
 		if mimeType == "application/pdf" {
 			// PDFを画像に変換してアップロード
-			images, err := fs.pdfProcessor.ConvertPDFToImages(data)
+			images, err := fs.pdfProcessor.ConvertPDFToImages(data, config.DPI.Photos)
 			if err != nil {
 				log.Printf("PDF画像変換失敗: %v", err)
 			} else {
