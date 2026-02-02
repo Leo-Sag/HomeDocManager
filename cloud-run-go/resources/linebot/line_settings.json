@@ -1,0 +1,65 @@
+{
+    "flex_template_path": "resources/linebot/line_flex_template.json",
+    "help_template_path": "resources/linebot/line_flex_help_message.json",
+    "notebooklm_urls": {
+        "life": "https://notebooklm.google.com/notebook/EXAMPLE_LIFE",
+        "money": "https://notebooklm.google.com/notebook/EXAMPLE_MONEY",
+        "children": "https://notebooklm.google.com/notebook/EXAMPLE_CHILDREN",
+        "medical": "https://notebooklm.google.com/notebook/EXAMPLE_MEDICAL",
+        "library": "https://notebooklm.google.com/notebook/EXAMPLE_LIBRARY",
+        "help": "https://notebooklm.google.com/notebook/EXAMPLE_HELP",
+        "default": "https://notebooklm.google.com/notebook/EXAMPLE_DEFAULT"
+    },
+    "triggers": {
+        "life": "__CAT_LIFE__",
+        "money": "__CAT_MONEY__",
+        "children": "__CAT_CHILDREN__",
+        "medical": "__CAT_MEDICAL__",
+        "library": "__LIBRARY__",
+        "help": "__HELP__"
+    },
+    "category_labels": {
+        "life": "🏠 生活",
+        "money": "💰 お金",
+        "children": "👶 子供",
+        "medical": "🏥 医療",
+        "library": "📚 ライブラリ",
+        "help": "❓ 使い方"
+    },
+    "examples": {
+        "life": [
+            "住民票の手続きは？",
+            "電気契約の確認方法は？"
+        ],
+        "money": [
+            "医療費控除はいくら？",
+            "保険料の支払いは？"
+        ],
+        "children": [
+            "学校の提出書類の締切は？",
+            "習い事の連絡先は？"
+        ],
+        "medical": [
+            "次回通院の予約はいつ？",
+            "薬の用法は？"
+        ],
+        "library": [
+            "この家電のエラーE2の対処は？",
+            "取説のPDFはどこ？"
+        ],
+        "help": []
+    },
+    "quick_reply": {
+        "enabled": true,
+        "include_current": true,
+        "current_prefix": "✅ ",
+        "order": [
+            "life",
+            "money",
+            "children",
+            "medical",
+            "library",
+            "help"
+        ]
+    }
+}
