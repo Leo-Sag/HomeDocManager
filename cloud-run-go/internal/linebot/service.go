@@ -155,7 +155,18 @@ func (ft *FlexTemplate) build(vars map[string]string) (map[string]interface{}, e
 	}
 	s := string(b)
 	for k, v := range vars {
-		s = strings.ReplaceAll(s, "{{"+k+"}}", v)
+		// JSON文字列として安全にエスケープする
+		// 改行やダブルクォートが含まれてもJSONを壊さない
+		esc, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+
+		// esc は `"...."` の形なので外側の " を取り除く
+		// 例: "a\nb" → a\\nb
+		escapedValue := string(esc[1 : len(esc)-1])
+
+		s = strings.ReplaceAll(s, "{{"+k+"}}", escapedValue)
 	}
 
 	var result map[string]interface{}

@@ -58,17 +58,37 @@ func (h *Handler) handleTextMessage(replyToken, text string) {
 		return
 	}
 
-	// map[string]interface{} から linebot.FlexContainer へ変換
-	b, err := json.Marshal(flexContents)
+	// altText と payload を正規化
+	altText := "NotebookLM案内"
+	payload := flexContents
+
+	// テンプレに altText があれば採用
+	if v, ok := flexContents["altText"].(string); ok && v != "" {
+		altText = v
+	}
+
+	// contents ラッパーがある場合は bubble 本体だけ抜く
+	if cAny, ok := flexContents["contents"]; ok {
+		if cMap, ok := cAny.(map[string]interface{}); ok {
+			payload = cMap
+		}
+	}
+
+	// bubble本体だけを Unmarshal する
+	b, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Error marshaling flex message: %v", err)
 		return
 	}
+
 	container, err := linebot.UnmarshalFlexMessageJSON(b)
 	if err != nil {
 		log.Printf("Error unmarshaling flex message: %v", err)
 		return
 	}
+
+	// altText を反映して返信する
+	msg := linebot.NewFlexMessage(altText, container)
 
 	// Quick Replyを追加
 	quickReplyItems := h.service.GetQuickReplyItems(category)
@@ -96,7 +116,6 @@ func (h *Handler) handleTextMessage(replyToken, text string) {
 		))
 	}
 
-	msg := linebot.NewFlexMessage("NotebookLM案内", container)
 	if len(qrItems) > 0 {
 		msg.WithQuickReplies(linebot.NewQuickReplyItems(qrItems...))
 	}
