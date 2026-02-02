@@ -10,6 +10,7 @@ import (
 
 	"github.com/leo-sagawa/homedocmanager/internal/model"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
@@ -17,6 +18,7 @@ import (
 // DriveClient はGoogle Drive APIクライアント
 type DriveClient struct {
 	service     *drive.Service
+	docsService *docs.Service
 	oauthCreds  *OAuthCredentials
 	folderCache map[string]string // key: "parentID:folderName", value: folderID
 	folderMu    sync.Mutex
@@ -33,8 +35,13 @@ func NewDriveClient(ctx context.Context) (*DriveClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create drive service: %w", err)
 		}
+		docsService, err := docs.NewService(ctx, option.WithScopes(docs.DocumentsScope))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create docs service: %w", err)
+		}
 		return &DriveClient{
 			service:     service,
+			docsService: docsService,
 			folderCache: make(map[string]string),
 		}, nil
 	}
@@ -52,8 +59,17 @@ func NewDriveClient(ctx context.Context) (*DriveClient, error) {
 		return nil, fmt.Errorf("failed to create drive service with OAuth: %w", err)
 	}
 
+	docsService, err := docs.NewService(ctx, option.WithTokenSource(&tokenSource{
+		creds: creds,
+		ctx:   ctx,
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create docs service with OAuth: %w", err)
+	}
+
 	return &DriveClient{
 		service:     service,
+		docsService: docsService,
 		oauthCreds:  creds,
 		folderCache: make(map[string]string),
 	}, nil
