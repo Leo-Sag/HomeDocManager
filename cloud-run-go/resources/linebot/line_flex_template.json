@@ -1,122 +1,118 @@
 {
-  "type": "flex",
-  "altText": "案内",
-  "contents": {
-    "type": "bubble",
-    "size": "giga",
-    "header": {
-      "type": "box",
-      "layout": "vertical",
-      "contents": [
-        {
-          "type": "text",
-          "text": "{{TITLE}}",
-          "weight": "bold",
-          "size": "xl"
-        },
-        {
-          "type": "text",
-          "text": "{{SUBTITLE}}",
-          "size": "sm",
-          "color": "#666666",
-          "wrap": true
-        }
-      ],
-      "paddingAll": "20px"
-    },
-    "body": {
-      "type": "box",
-      "layout": "vertical",
-      "spacing": "md",
-      "contents": [
-        {
-          "type": "box",
-          "layout": "vertical",
-          "spacing": "sm",
-          "contents": [
-            {
-              "type": "text",
-              "text": "やること",
-              "weight": "bold",
-              "size": "md"
-            },
-            {
-              "type": "text",
-              "text": "1) 下のボタンでNotebookLMを開く",
-              "wrap": true
-            },
-            {
-              "type": "text",
-              "text": "2) 質問を入力",
-              "wrap": true
-            },
-            {
-              "type": "text",
-              "text": "3) 回答の引用（根拠）を確認",
-              "wrap": true
+  "type": "bubble",
+  "size": "giga",
+  "header": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+      {
+        "type": "text",
+        "text": "{{TITLE}}",
+        "weight": "bold",
+        "size": "xl"
+      },
+      {
+        "type": "text",
+        "text": "{{SUBTITLE}}",
+        "size": "sm",
+        "color": "#666666",
+        "wrap": true
+      }
+    ],
+    "paddingAll": "20px"
+  },
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "やること",
+            "weight": "bold",
+            "size": "md"
+          },
+          {
+            "type": "text",
+            "text": "1) 下のボタンでNotebookLMを開く",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "2) 質問を入力",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "3) 回答の引用（根拠）を確認",
+            "wrap": true
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "NotebookLM",
+            "weight": "bold",
+            "size": "md"
+          },
+          {
+            "type": "button",
+            "style": "primary",
+            "action": {
+              "type": "uri",
+              "label": "NotebookLMを開く",
+              "uri": "{{NOTEBOOKLM_URL}}"
             }
-          ]
-        },
-        {
-          "type": "separator"
-        },
-        {
-          "type": "box",
-          "layout": "vertical",
-          "spacing": "sm",
-          "contents": [
-            {
-              "type": "text",
-              "text": "NotebookLM",
-              "weight": "bold",
-              "size": "md"
-            },
-            {
-              "type": "button",
-              "style": "primary",
-              "action": {
-                "type": "uri",
-                "label": "NotebookLMを開く",
-                "uri": "{{NOTEBOOKLM_URL}}"
-              }
-            }
-          ]
-        },
-        {
-          "type": "separator"
-        },
-        {
-          "type": "box",
-          "layout": "vertical",
-          "spacing": "sm",
-          "contents": [
-            {
-              "type": "text",
-              "text": "質問例",
-              "weight": "bold",
-              "size": "md"
-            },
-            {
-              "type": "text",
-              "text": "{{EXAMPLE_1}}",
-              "wrap": true
-            },
-            {
-              "type": "text",
-              "text": "{{EXAMPLE_2}}",
-              "wrap": true
-            }
-          ]
-        },
-        {
-          "type": "text",
-          "text": "※必要なら元ファイルも開いて確認してください。",
-          "size": "xs",
-          "color": "#888888",
-          "wrap": true
-        }
-      ],
-      "paddingAll": "20px"
-    }
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "質問例",
+            "weight": "bold",
+            "size": "md"
+          },
+          {
+            "type": "text",
+            "text": "{{EXAMPLE_1}}",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "{{EXAMPLE_2}}",
+            "wrap": true
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": "※必要なら元ファイルも開いて確認してください。",
+        "size": "xs",
+        "color": "#888888",
+        "wrap": true
+      }
+    ],
+    "paddingAll": "20px"
   }
 }

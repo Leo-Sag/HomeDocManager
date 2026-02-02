@@ -1,134 +1,130 @@
 {
-  "type": "flex",
-  "altText": "使い方（NotebookLMリンク）",
-  "contents": {
-    "type": "bubble",
-    "size": "giga",
-    "header": {
-      "type": "box",
-      "layout": "vertical",
-      "contents": [
-        {
-          "type": "text",
-          "text": "使い方",
-          "weight": "bold",
-          "size": "xl"
-        },
-        {
-          "type": "text",
-          "text": "カテゴリを選んで、NotebookLMで質問するだけ",
-          "size": "sm",
-          "color": "#666666",
-          "wrap": true
-        }
-      ],
-      "paddingAll": "20px"
-    },
-    "body": {
-      "type": "box",
-      "layout": "vertical",
-      "spacing": "md",
-      "contents": [
-        {
-          "type": "box",
-          "layout": "vertical",
-          "spacing": "sm",
-          "contents": [
-            {
-              "type": "text",
-              "text": "手順",
-              "weight": "bold",
-              "size": "md"
-            },
-            {
-              "type": "text",
-              "text": "1) 下のメニューからカテゴリを押す",
-              "wrap": true
-            },
-            {
-              "type": "text",
-              "text": "2) 表示されたリンクを開く",
-              "wrap": true
-            },
-            {
-              "type": "text",
-              "text": "3) NotebookLMに質問を入力",
-              "wrap": true
+  "type": "bubble",
+  "size": "giga",
+  "header": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+      {
+        "type": "text",
+        "text": "使い方",
+        "weight": "bold",
+        "size": "xl"
+      },
+      {
+        "type": "text",
+        "text": "カテゴリを選んで、NotebookLMで質問するだけ",
+        "size": "sm",
+        "color": "#666666",
+        "wrap": true
+      }
+    ],
+    "paddingAll": "20px"
+  },
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "手順",
+            "weight": "bold",
+            "size": "md"
+          },
+          {
+            "type": "text",
+            "text": "1) 下のメニューからカテゴリを押す",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "2) 表示されたリンクを開く",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "3) NotebookLMに質問を入力",
+            "wrap": true
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "NotebookLMを開く",
+            "weight": "bold",
+            "size": "md"
+          },
+          {
+            "type": "button",
+            "style": "primary",
+            "action": {
+              "type": "uri",
+              "label": "NotebookLMを開く",
+              "uri": "{{NOTEBOOKLM_URL}}"
             }
-          ]
-        },
-        {
-          "type": "separator"
-        },
-        {
-          "type": "box",
-          "layout": "vertical",
-          "spacing": "sm",
-          "contents": [
-            {
-              "type": "text",
-              "text": "NotebookLMを開く",
-              "weight": "bold",
-              "size": "md"
-            },
-            {
-              "type": "button",
-              "style": "primary",
-              "action": {
-                "type": "uri",
-                "label": "NotebookLMを開く",
-                "uri": "{{NOTEBOOKLM_URL}}"
-              }
-            }
-          ]
-        },
-        {
-          "type": "separator"
-        },
-        {
-          "type": "box",
-          "layout": "vertical",
-          "spacing": "sm",
-          "contents": [
-            {
-              "type": "text",
-              "text": "質問例",
-              "weight": "bold",
-              "size": "md"
-            },
-            {
-              "type": "text",
-              "text": "・火災保険の更新月は？",
-              "wrap": true
-            },
-            {
-              "type": "text",
-              "text": "・学校の提出書類の締切は？",
-              "wrap": true
-            },
-            {
-              "type": "text",
-              "text": "・この家電のエラーE2の対処は？",
-              "wrap": true
-            }
-          ]
-        },
-        {
-          "type": "text",
-          "text": "📌 迷ったらそのまま質問してOKです。\n✅ コツ：質問の最初に「生活：」「医療：」など付けると探しやすいです。",
-          "size": "sm",
-          "color": "#666666",
-          "wrap": true
-        },
-        {
-          "type": "text",
-          "text": "※回答には根拠（引用）が表示されます。必要なら元ファイルも開いて確認してください。",
-          "size": "xs",
-          "color": "#888888",
-          "wrap": true
-        }
-      ],
-      "paddingAll": "20px"
-    }
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": "質問例",
+            "weight": "bold",
+            "size": "md"
+          },
+          {
+            "type": "text",
+            "text": "・火災保険の更新月は？",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "・学校の提出書類の締切は？",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "・この家電のエラーE2の対処は？",
+            "wrap": true
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": "📌 迷ったらそのまま質問してOKです。\n✅ コツ：質問の最初に「生活：」「医療：」など付けると探しやすいです。",
+        "size": "sm",
+        "color": "#666666",
+        "wrap": true
+      },
+      {
+        "type": "text",
+        "text": "※回答には根拠（引用）が表示されます。必要なら元ファイルも開いて確認してください。",
+        "size": "xs",
+        "color": "#888888",
+        "wrap": true
+      }
+    ],
+    "paddingAll": "20px"
   }
 }
