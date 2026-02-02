@@ -110,6 +110,9 @@ func (s *Service) BuildFlexMessage(trigger string) (string, map[string]interface
 	}
 
 	label := s.settings.CategoryLabels[category]
+	if label == "" {
+		label = category
+	}
 	title := label
 	desc := fmt.Sprintf("%sについての自動回答（NotebookLM）にアクセスします。", label)
 
@@ -181,7 +184,7 @@ func (s *Service) GetQuickReplyItems(current string) []map[string]interface{} {
 		}
 
 		// カレントカテゴリに ✅ を付記
-		if cat == current && s.settings.QuickReply.Enabled && s.settings.QuickReply.IncludeCurrent {
+		if cat == current && s.settings.QuickReply.IncludeCurrent {
 			prefix := s.settings.QuickReply.CurrentPrefix
 			if prefix == "" {
 				prefix = "✅ "
