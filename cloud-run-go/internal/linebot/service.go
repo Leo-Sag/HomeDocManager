@@ -8,11 +8,21 @@ import (
 	"sync"
 )
 
+type QuickReplyConfig struct {
+	Enabled        bool     `json:"enabled"`
+	IncludeCurrent bool     `json:"include_current"`
+	CurrentPrefix  string   `json:"current_prefix"`
+	Order          []string `json:"order"`
+}
+
 type Settings struct {
-	NotebookLMURL  string              `json:"notebooklm_url"`
-	Triggers       map[string]string   `json:"triggers"`
-	CategoryLabels map[string]string   `json:"category_labels"`
-	Examples       map[string][]string `json:"examples"`
+	FlexTemplatePath string              `json:"flex_template_path"`
+	HelpTemplatePath string              `json:"help_template_path"`
+	NotebookLMURLs   map[string]string   `json:"notebooklm_urls"`
+	Triggers         map[string]string   `json:"triggers"`
+	CategoryLabels   map[string]string   `json:"category_labels"`
+	Examples         map[string][]string `json:"examples"`
+	QuickReply       QuickReplyConfig    `json:"quick_reply"`
 }
 
 type FlexTemplate struct {
@@ -26,20 +36,20 @@ type Service struct {
 	mu           sync.RWMutex
 }
 
-func NewService(settingsPath, templatePath, helpPath string) (*Service, error) {
+func NewService(settingsPath string) (*Service, error) {
 	s, err := loadSettings(settingsPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
-	t, err := loadTemplate(templatePath)
+	t, err := loadTemplate(s.FlexTemplatePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load template: %w", err)
+		return nil, fmt.Errorf("failed to load template from %s: %w", s.FlexTemplatePath, err)
 	}
 
-	h, err := loadTemplate(helpPath)
+	h, err := loadTemplate(s.HelpTemplatePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load help template: %w", err)
+		return nil, fmt.Errorf("failed to load help template from %s: %w", s.HelpTemplatePath, err)
 	}
 
 	return &Service{
@@ -73,8 +83,8 @@ func loadTemplate(path string) (*FlexTemplate, error) {
 	return &FlexTemplate{raw: raw}, nil
 }
 
-// BuildFlexMessage はトリガー文字列を元にFlex Messageのコンテンツを生成
-func (s *Service) BuildFlexMessage(trigger string) (map[string]interface{}, error) {
+// BuildFlexMessage はトリガー文字列を元にカテゴリ特定とFlex Messageのコンテンツを生成
+func (s *Service) BuildFlexMessage(trigger string) (string, map[string]interface{}, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -86,15 +96,21 @@ func (s *Service) BuildFlexMessage(trigger string) (map[string]interface{}, erro
 		}
 	}
 
+	url := s.settings.NotebookLMURLs[category]
+	if url == "" {
+		url = s.settings.NotebookLMURLs["default"]
+	}
+
 	// 使い方(help)の場合は専用テンプレ
 	if category == "help" {
-		return s.helpTemplate.build(map[string]string{
-			"NOTEBOOKLM_URL": s.settings.NotebookLMURL,
+		contents, err := s.helpTemplate.build(map[string]string{
+			"NOTEBOOKLM_URL": url,
 		})
+		return category, contents, err
 	}
 
 	label := s.settings.CategoryLabels[category]
-	title := fmt.Sprintf("✅ %s", label)
+	title := label
 	desc := fmt.Sprintf("%sについての自動回答（NotebookLM）にアクセスします。", label)
 
 	if category == "unknown" {
@@ -114,12 +130,13 @@ func (s *Service) BuildFlexMessage(trigger string) (map[string]interface{}, erro
 	vars := map[string]string{
 		"TITLE":          title,
 		"SUBTITLE":       desc,
-		"NOTEBOOKLM_URL": s.settings.NotebookLMURL,
+		"NOTEBOOKLM_URL": url,
 		"EXAMPLE_1":      ex1,
 		"EXAMPLE_2":      ex2,
 	}
 
-	return s.template.build(vars)
+	contents, err := s.template.build(vars)
+	return category, contents, err
 }
 
 func (ft *FlexTemplate) build(vars map[string]string) (map[string]interface{}, error) {
@@ -140,15 +157,17 @@ func (ft *FlexTemplate) build(vars map[string]string) (map[string]interface{}, e
 }
 
 // GetQuickReplyItems はカテゴリ切替用のQuick Replyアイテムを生成
-func (s *Service) GetQuickReplyItems() []map[string]interface{} {
+func (s *Service) GetQuickReplyItems(current string) []map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var items []map[string]interface{}
-	// 指定の順序で出したいので、手動でキーを指定
-	keys := []string{"life", "money", "children", "medical", "library", "help"}
+	order := s.settings.QuickReply.Order
+	if len(order) == 0 {
+		order = []string{"life", "money", "children", "medical", "library", "help"}
+	}
 
-	for _, cat := range keys {
+	for _, cat := range order {
 		trigger, ok := s.settings.Triggers[cat]
 		if !ok {
 			continue
@@ -157,6 +176,16 @@ func (s *Service) GetQuickReplyItems() []map[string]interface{} {
 		if label == "" {
 			label = cat
 		}
+
+		// カレントカテゴリに ✅ を付記
+		if cat == current && s.settings.QuickReply.Enabled && s.settings.QuickReply.IncludeCurrent {
+			prefix := s.settings.QuickReply.CurrentPrefix
+			if prefix == "" {
+				prefix = "✅ "
+			}
+			label = prefix + label
+		}
+
 		items = append(items, map[string]interface{}{
 			"type": "action",
 			"action": map[string]interface{}{

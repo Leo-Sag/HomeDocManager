@@ -58,7 +58,7 @@ func main() {
 
 	// LINE Bot Webhook
 	if config.LineChannelSecret != "" && config.LineChannelAccessToken != "" {
-		lineService, err := linebot.NewService(config.LineBotSettingsPath, config.LineFlexTemplatePath, config.LineFlexHelpPath)
+		lineService, err := linebot.NewService(config.LineBotSettingsPath)
 		if err != nil {
 			log.Printf("Warning: LINE Bot Service initialization failed: %v", err)
 		} else {

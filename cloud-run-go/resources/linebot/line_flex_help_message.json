@@ -77,7 +77,7 @@
               "action": {
                 "type": "uri",
                 "label": "NotebookLMを開く",
-                "uri": "{{NOTEBOOKLM_URL}}"
+                "uri": "https://YOUR_NOTEBOOKLM_URL"
               }
             }
           ]

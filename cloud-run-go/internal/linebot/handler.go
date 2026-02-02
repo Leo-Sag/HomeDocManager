@@ -52,7 +52,7 @@ func (h *Handler) HandleWebhook(c *gin.Context) {
 
 func (h *Handler) handleTextMessage(replyToken, text string) {
 	// Flex Messageを生成
-	flexContents, err := h.service.BuildFlexMessage(text)
+	category, flexContents, err := h.service.BuildFlexMessage(text)
 	if err != nil {
 		log.Printf("Error building flex message: %v", err)
 		return
@@ -71,7 +71,7 @@ func (h *Handler) handleTextMessage(replyToken, text string) {
 	}
 
 	// Quick Replyを追加
-	quickReplyItems := h.service.GetQuickReplyItems()
+	quickReplyItems := h.service.GetQuickReplyItems(category)
 	var qrItems []*linebot.QuickReplyButton
 	for _, item := range quickReplyItems {
 		action := item["action"].(map[string]interface{})
