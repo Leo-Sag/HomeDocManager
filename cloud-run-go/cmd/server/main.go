@@ -7,7 +7,9 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/leo-sagawa/homedocmanager/internal/config"
 	"github.com/leo-sagawa/homedocmanager/internal/handler"
+	"github.com/leo-sagawa/homedocmanager/internal/linebot"
 	"github.com/leo-sagawa/homedocmanager/internal/service"
 )
 
@@ -53,6 +55,24 @@ func main() {
 	router.POST("/admin/watch/renew", pubsubHandler.WatchRenew)
 	router.POST("/admin/watch/stop", pubsubHandler.WatchStop)
 	router.GET("/admin/watch/status", pubsubHandler.WatchStatus)
+
+	// LINE Bot Webhook
+	if config.LineChannelSecret != "" && config.LineChannelAccessToken != "" {
+		lineService, err := linebot.NewService(config.LineBotSettingsPath, config.LineFlexTemplatePath, config.LineFlexHelpPath)
+		if err != nil {
+			log.Printf("Warning: LINE Bot Service initialization failed: %v", err)
+		} else {
+			lineHandler, err := linebot.NewHandler(config.LineChannelSecret, config.LineChannelAccessToken, lineService)
+			if err != nil {
+				log.Printf("Warning: LINE Bot Handler initialization failed: %v", err)
+			} else {
+				router.POST("/callback", lineHandler.HandleWebhook)
+				log.Printf("LINE Bot Webhook registered at /callback")
+			}
+		}
+	} else {
+		log.Printf("Info: LINE Bot credentials not set, /callback endpoint disabled")
+	}
 
 	// ポート設定
 	port := os.Getenv("PORT")

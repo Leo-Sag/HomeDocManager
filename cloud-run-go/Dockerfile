@@ -24,8 +24,9 @@ RUN apk --no-cache add ca-certificates tzdata poppler-utils
 
 WORKDIR /root/
 
-# Copy binary from builder
+# Copy binary and resources from builder
 COPY --from=builder /app/server .
+COPY --from=builder /app/resources ./resources
 
 # Set timezone to Asia/Tokyo
 ENV TZ=Asia/Tokyo

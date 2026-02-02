@@ -1,0 +1,5 @@
+{
+  "notebooklm_url": "https://YOUR_NOTEBOOKLM_URL",
+  "help_trigger": "__HELP__",
+  "help_flex_message_file": "line_flex_help_message.json"
+}
