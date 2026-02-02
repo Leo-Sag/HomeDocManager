@@ -74,10 +74,25 @@ func (h *Handler) handleTextMessage(replyToken, text string) {
 	quickReplyItems := h.service.GetQuickReplyItems(category)
 	var qrItems []*linebot.QuickReplyButton
 	for _, item := range quickReplyItems {
-		action := item["action"].(map[string]interface{})
+		// 安全に取り出す（型崩れ・設定ミスでもpanicしない）
+		actionAny, ok := item["action"]
+		if !ok {
+			continue
+		}
+		action, ok := actionAny.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		label, _ := action["label"].(string)
+		text, _ := action["text"].(string)
+		if label == "" || text == "" {
+			continue
+		}
+
 		qrItems = append(qrItems, linebot.NewQuickReplyButton(
-			"",
-			linebot.NewMessageAction(action["label"].(string), action["text"].(string)),
+			"", // 画像なし
+			linebot.NewMessageAction(label, text),
 		))
 	}
 

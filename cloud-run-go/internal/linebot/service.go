@@ -156,10 +156,13 @@ func (ft *FlexTemplate) build(vars map[string]string) (map[string]interface{}, e
 	return result, nil
 }
 
-// GetQuickReplyItems はカテゴリ切替用のQuick Replyアイテムを生成
 func (s *Service) GetQuickReplyItems(current string) []map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if !s.settings.QuickReply.Enabled {
+		return nil
+	}
 
 	var items []map[string]interface{}
 	order := s.settings.QuickReply.Order
