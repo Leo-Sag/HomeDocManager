@@ -83,6 +83,12 @@ func loadTemplate(path string) (*FlexTemplate, error) {
 	return &FlexTemplate{raw: raw}, nil
 }
 
+// buildGuideText は家族向けの「迷ったらOK」＋「質問のコツ」を返す
+func buildGuideText() string {
+	// Flexのtextは wrap:true なので改行を入れても見やすい
+	return "📌 迷ったらそのまま質問してOKです。\n✅ コツ：質問の最初に「生活：」「医療：」など付けると探しやすいです。"
+}
+
 // BuildFlexMessage はトリガー文字列を元にカテゴリ特定とFlex Messageのコンテンツを生成
 func (s *Service) BuildFlexMessage(trigger string) (string, map[string]interface{}, error) {
 	s.mu.RLock()
@@ -114,11 +120,11 @@ func (s *Service) BuildFlexMessage(trigger string) (string, map[string]interface
 		label = category
 	}
 	title := label
-	desc := fmt.Sprintf("%sについての自動回答（NotebookLM）にアクセスします。", label)
+	desc := fmt.Sprintf("%sの書類を調べられます。\n%s", label, buildGuideText())
 
 	if category == "unknown" {
 		title = "使い方・カテゴリ選択"
-		desc = "下のメニューからカテゴリを選択するか、リッチメニューをご利用ください。"
+		desc = "迷ったらそのまま質問してOKです。\n下のカテゴリボタン（またはリッチメニュー）から選んでも探せます。\n" + buildGuideText()
 	}
 
 	examples := s.settings.Examples[category]
