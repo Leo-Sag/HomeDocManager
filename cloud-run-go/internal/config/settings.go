@@ -8,6 +8,13 @@ import (
 var (
 	GCPProjectID = GetEnv("GCP_PROJECT_ID", "your-project-id")
 	GCPRegion    = GetEnv("GCP_REGION", "asia-northeast1")
+
+	// LINE Bot設定
+	LineChannelSecret      = os.Getenv("LINE_CHANNEL_SECRET")
+	LineChannelAccessToken = os.Getenv("LINE_CHANNEL_ACCESS_TOKEN")
+	LineBotSettingsPath    = GetEnv("LINE_BOT_SETTINGS_PATH", "resources/linebot/line_bot_settings.json")
+	LineFlexTemplatePath   = GetEnv("LINE_FLEX_TEMPLATE_PATH", "resources/linebot/line_flex_template.json")
+	LineFlexHelpPath       = GetEnv("LINE_FLEX_HELP_PATH", "resources/linebot/line_flex_help_message.json")
 )
 
 // Secret Manager設定

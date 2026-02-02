@@ -43,6 +43,12 @@ Go言語によるリファクタリングにより、高速かつ堅牢な処理
 - **インボックス強制スキャン**: `/trigger/inbox` により、Inbox 内のファイルを一括手動処理。
 - **ストレージ容量解決**: ユーザーの OAuth トークンを使用することで、サービスアカウントの容量制限を回避。
 
+### 6. LINE Bot インターフェース (NEW)
+
+- **カテゴリ別案内**: リッチメニューからカテゴリを選択すると、対応する NotebookLM へのリンクを Flex Message で返信。
+- **クイックリプライ**: カテゴリ選択後に他のカテゴリへ簡単に切り替えられるボタンを表示。
+- **ヘルプ機能**: 使い方を解説する専用の Flex Message を提供。
+
 ## システム構成
 
 - **言語**: Go 1.24
@@ -55,7 +61,8 @@ Go言語によるリファクタリングにより、高速かつ堅牢な処理
 HomeDocManager/
 ├── cloud-run-go/           # Goアプリケーション本体 (v1.2.0 Core)
 │   ├── cmd/                # エントリポイント (server)
-│   ├── internal/           # 内部ロジック (service, handler, config, model)
+│   ├── internal/           # 内部ロジック (service, handler, config, model, linebot)
+│   ├── resources/          # リソースファイル (linebot テンプレ等)
 │   ├── tools/              # 運用ツール (setup_oauth, etc.)
 │   └── Dockerfile          # コンテナ定義
 ├── _archive/               # 過去の遺産コード
