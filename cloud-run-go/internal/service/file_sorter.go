@@ -340,24 +340,40 @@ func (fs *FileSorter) performAdditionalActions(
 	}
 
 	// NotebookLM同期
+	log.Printf("NotebookLM同期チェック: category=%s, sync_enabled=%v", category, fs.notebooklmSync != nil)
 	if fs.notebooklmSync != nil && fs.notebooklmSync.ShouldSync(category) {
-		// OCRテキストを取得（Geminiで抽出）
-		ocrText, err := fs.aiRouter.ExtractOCRText(ctx, data, mimeType)
-		if err != nil {
-			log.Printf("OCRテキスト抽出失敗: %v", err)
-		} else if ocrText != "" {
-			// 年度を計算
-			fiscalYear := result.FiscalYear
-			if fiscalYear == 0 {
-				fiscalYear = fs.gradeManager.CalculateFiscalYear(result.Date)
-			}
-
-			// NotebookLMに同期
-			err := fs.notebooklmSync.SyncFile(ctx, fileID, fileName, category, ocrText, result.Date, fiscalYear)
+		log.Printf("NotebookLM同期対象確定: %s", category)
+		// Driveカテゴリ → NotebookLMカテゴリに変換
+		notebookCategory, exists := config.NotebookLMCategoryMap[category]
+		if !exists {
+			log.Printf("NotebookLMカテゴリマッピングが見つかりません: %s", category)
+		} else {
+			log.Printf("NotebookLM変換後カテゴリ: %s", notebookCategory)
+			// OCRBundleを取得（Geminiで抽出）
+			bundle, err := fs.aiRouter.ExtractOCRBundle(ctx, data, mimeType)
 			if err != nil {
-				log.Printf("NotebookLM同期失敗: %v", err)
+				log.Printf("OCRBundle抽出失敗: %v", err)
+			} else if bundle.OCRText != "" {
+				// 年度を計算
+				fiscalYear := result.FiscalYear
+				if fiscalYear == 0 {
+					fiscalYear = fs.gradeManager.CalculateFiscalYear(result.Date)
+				}
+
+				log.Printf("NotebookLM同期実行開始: %s (%d年度_%s)", fileName, fiscalYear, notebookCategory)
+				// NotebookLMに同期
+				err := fs.notebooklmSync.SyncFile(ctx, fileID, fileName, notebookCategory, bundle.OCRText, bundle.Facts, bundle.Summary, result.Date, fiscalYear)
+				if err != nil {
+					log.Printf("NotebookLM同期失敗: %v", err)
+				} else {
+					log.Printf("NotebookLM同期成功ログ: %s", fileName)
+				}
+			} else {
+				log.Printf("OCRテキストが空のため同期をスキップしました")
 			}
 		}
+	} else {
+		log.Printf("NotebookLM同期対象外またはサービス未初期化: category=%s", category)
 	}
 }
 

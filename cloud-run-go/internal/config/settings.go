@@ -48,6 +48,7 @@ var FolderIDs = map[string]string{
 	"LIFE_ADMIN":      "1keZdfSSrmpPqPWhC22Fg2A5GmaCfg3Xg",
 	"CHILDREN_EDU":    "14TyZrKoXRSSP6kxpytxvap4poKmDn4qs",
 	"PHOTO_OTHER":     "1euBhhNI0Ny13tXs1JVrcO0KLKHySFnEy",
+	"HEALTH_MEDICAL":  "1IXeTT23a4_sWyLc1H195dtrfaLFJXeDn",
 	"LIBRARY":         "1MxppChMYZOJOyY2s-w6CsVam3P5_vccv",
 	"NOTEBOOKLM_SYNC": "1AVRbK5Zy8IVC3XYtSQ7ZwNGMIB3ToaBu",
 	"ARCHIVE":         "14iqjkHeBVMz47sNzPFkxrp5syr2tIOeO",
@@ -60,6 +61,7 @@ var CategoryMap = map[string]string{
 	"30_ライフ・行政":    FolderIDs["LIFE_ADMIN"],
 	"40_子供・教育":     FolderIDs["CHILDREN_EDU"],
 	"50_写真・その他":    FolderIDs["PHOTO_OTHER"],
+	"60_ヘルス・医療":    FolderIDs["HEALTH_MEDICAL"],
 	"90_ライブラリ":     FolderIDs["LIBRARY"],
 	"99_転送済みアーカイブ": FolderIDs["ARCHIVE"],
 }
@@ -96,7 +98,28 @@ var NotebookLMSyncCategories = []string{
 	"20_プロジェクト・資産",
 	"30_ライフ・行政",
 	"40_子供・教育",
+	"60_ヘルス・医療",
 	"90_ライブラリ",
+}
+
+// NotebookLMカテゴリキー
+const (
+	NotebookLife     = "life"
+	NotebookMoney    = "money"
+	NotebookChildren = "children"
+	NotebookMedical  = "medical"
+	NotebookLibrary  = "library"
+	NotebookAssets   = "assets"
+)
+
+// Drive分類カテゴリ → NotebookLMカテゴリキー
+var NotebookLMCategoryMap = map[string]string{
+	"10_マネー・税務":    NotebookMoney,
+	"20_プロジェクト・資産": NotebookAssets,
+	"30_ライフ・行政":    NotebookLife,
+	"40_子供・教育":     NotebookChildren,
+	"60_ヘルス・医療":    NotebookMedical,
+	"90_ライブラリ":     NotebookLibrary,
 }
 
 // NotebookLMドキュメントのオーナー

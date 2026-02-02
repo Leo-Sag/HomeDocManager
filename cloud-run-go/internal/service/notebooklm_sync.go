@@ -1,15 +1,15 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/leo-sagawa/homedocmanager/internal/config"
+	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/googleapi"
 )
@@ -40,12 +40,7 @@ func (ns *NotebookLMSync) ShouldSync(category string) bool {
 }
 
 // SyncFile はファイルをNotebookLMに同期
-func (ns *NotebookLMSync) SyncFile(ctx context.Context, fileID, fileName, category, ocrText, dateStr string, fiscalYear int) error {
-	if !ns.ShouldSync(category) {
-		log.Printf("カテゴリ %s は同期対象外です", category)
-		return nil
-	}
-
+func (ns *NotebookLMSync) SyncFile(ctx context.Context, fileID, fileName, notebookCategory, ocrText string, facts []string, summary, dateStr string, fiscalYear int) error {
 	// 日付をフォーマット
 	formattedDate := formatDateForNotebook(dateStr)
 
@@ -54,13 +49,13 @@ func (ns *NotebookLMSync) SyncFile(ctx context.Context, fileID, fileName, catego
 	defer ns.mu.Unlock()
 
 	// 累積ドキュメントを取得または作成
-	docID, mimeType, err := ns.getOrCreateAccumulatedDoc(ctx, fiscalYear)
+	docID, mimeType, err := ns.getOrCreateAccumulatedDoc(ctx, fiscalYear, notebookCategory)
 	if err != nil {
 		return fmt.Errorf("累積ドキュメント取得/作成失敗: %w", err)
 	}
 
 	// ドキュメントに追記
-	entryText := ns.formatEntry(formattedDate, fileName, fileID, ocrText, category)
+	entryText := ns.formatEntry(formattedDate, fileName, fileID, ocrText, facts, summary, notebookCategory)
 	if err := ns.appendToDoc(ctx, docID, mimeType, entryText); err != nil {
 		return fmt.Errorf("ドキュメント追記失敗: %w", err)
 	}
@@ -68,42 +63,62 @@ func (ns *NotebookLMSync) SyncFile(ctx context.Context, fileID, fileName, catego
 	// 元ファイルに同期済みマーカーを設定
 	ns.markAsSynced(ctx, fileID)
 
-	log.Printf("NotebookLM同期完了: %s → %d年度_全記録", fileName, fiscalYear)
+	log.Printf("NotebookLM同期完了: %s → %d年度_%s", fileName, fiscalYear, notebookCategory)
 	return nil
 }
 
 // formatDateForNotebook はYYYYMMDD形式をYYYY/MM/DD形式に変換
 func formatDateForNotebook(dateStr string) string {
 	if len(dateStr) != 8 {
-		return time.Now().Format("2006/01/02")
+		return time.Now().Format("2006-01-02")
 	}
-	return fmt.Sprintf("%s/%s/%s", dateStr[:4], dateStr[4:6], dateStr[6:8])
+	// 要件 YYYY-MM-DD
+	return fmt.Sprintf("%s-%s-%s", dateStr[:4], dateStr[4:6], dateStr[6:8])
 }
 
-// formatEntry はエントリテキストをMarkdown形式でフォーマット
-func (ns *NotebookLMSync) formatEntry(formattedDate, fileName, fileID, ocrText, category string) string {
+// formatEntry はエントリテキストを要件に基づきフォーマット
+func (ns *NotebookLMSync) formatEntry(formattedDate, fileName, fileID, ocrText string, facts []string, summary, notebookCategory string) string {
 	fileURL := fmt.Sprintf("https://drive.google.com/file/d/%s/view", fileID)
 
-	return fmt.Sprintf(`
----
+	// facts を文字列に変換
+	factsStr := ""
+	if len(facts) > 0 {
+		for _, fact := range facts {
+			factsStr += fmt.Sprintf("- %s\n", fact)
+		}
+	} else {
+		factsStr = "- （抽出なし）\n"
+	}
 
-## 📄 %s - [%s] %s
+	// summary部分（空なら省略）
+	summarySection := ""
+	if summary != "" {
+		summarySection = fmt.Sprintf("\n要約（自動・要確認）:\n%s\n", summary)
+	}
 
-🔗 [元ファイルを開く](%s)
+	return fmt.Sprintf(`---
+## %s
 
+カテゴリ: %s
+最終更新: %s
+元ファイル: %s
+
+重要情報（抽出・推測なし）:
+%s%s
+本文（OCR原文）:
 %s
 
-`, formattedDate, category, fileName, fileURL, ocrText)
+`, fileName, notebookCategory, formattedDate, fileURL, factsStr, summarySection, ocrText)
 }
 
-// getOrCreateAccumulatedDoc は年度別統合ドキュメントを取得または作成
-func (ns *NotebookLMSync) getOrCreateAccumulatedDoc(ctx context.Context, fiscalYear int) (string, string, error) {
+// getOrCreateAccumulatedDoc は年度別・カテゴリ別統合ドキュメントを取得または作成
+func (ns *NotebookLMSync) getOrCreateAccumulatedDoc(ctx context.Context, fiscalYear int, notebookCategory string) (string, string, error) {
 	syncFolderID := config.FolderIDs["NOTEBOOKLM_SYNC"]
 	if syncFolderID == "" {
 		return "", "", fmt.Errorf("NOTEBOOKLM_SYNCフォルダIDが設定されていません")
 	}
 
-	docName := fmt.Sprintf("%d年度_全記録", fiscalYear)
+	docName := fmt.Sprintf("%d年度_%s", fiscalYear, notebookCategory)
 
 	// 既存のドキュメントを検索
 	docID, mimeType, err := ns.findDocByName(ctx, docName, syncFolderID)
@@ -115,12 +130,12 @@ func (ns *NotebookLMSync) getOrCreateAccumulatedDoc(ctx context.Context, fiscalY
 	}
 
 	// 新規作成
-	docID, err = ns.createUnifiedDoc(ctx, docName, syncFolderID, fiscalYear)
+	docID, err = ns.createUnifiedDoc(ctx, docName, syncFolderID, fiscalYear, notebookCategory)
 	if err != nil {
 		return "", "", err
 	}
 
-	return docID, "text/markdown", nil
+	return docID, "application/vnd.google-apps.document", nil
 }
 
 // findDocByName はフォルダ内でファイルを名前で検索し、IDとMimeTypeを返す
@@ -144,20 +159,16 @@ func (ns *NotebookLMSync) findDocByName(ctx context.Context, docName, parentID s
 	return "", "", nil
 }
 
-// createUnifiedDoc は新しい統合ドキュメントを作成
-func (ns *NotebookLMSync) createUnifiedDoc(ctx context.Context, docName, parentID string, fiscalYear int) (string, error) {
-	// Markdownファイルとして作成
+// createUnifiedDoc は新しい統合ドキュメント（Google Doc）を作成
+func (ns *NotebookLMSync) createUnifiedDoc(ctx context.Context, docName, parentID string, fiscalYear int, notebookCategory string) (string, error) {
+	// Google Doc として作成
 	file := &drive.File{
 		Name:     docName,
-		MimeType: "text/markdown",
+		MimeType: "application/vnd.google-apps.document",
 		Parents:  []string{parentID},
 	}
 
-	// ヘッダーテキストを初期内容として設定
-	headerText := fmt.Sprintf("# %d年度 全記録\n\n> このファイルは NotebookLM 用に自動生成された書類OCRテキストの統合ファイルです。\n> 各エントリには [カテゴリ名] が付与されています。\n\n", fiscalYear)
-
 	createdDoc, err := ns.driveClient.service.Files.Create(file).
-		Media(bytes.NewReader([]byte(headerText)), googleapi.ContentType("text/markdown")).
 		Fields("id").
 		SupportsAllDrives(true).
 		Context(ctx).
@@ -167,6 +178,25 @@ func (ns *NotebookLMSync) createUnifiedDoc(ctx context.Context, docName, parentI
 	}
 
 	docID := createdDoc.Id
+
+	// 初期ヘッダーを挿入
+	headerText := fmt.Sprintf("# %d年度 %s\n\nこのファイルは NotebookLM 用に自動生成された書類OCRテキストの統合ファイルです。\n\n", fiscalYear, notebookCategory)
+
+	requests := []*docs.Request{
+		{
+			InsertText: &docs.InsertTextRequest{
+				Location: &docs.Location{Index: 1},
+				Text:     headerText,
+			},
+		},
+	}
+	_, err = ns.driveClient.docsService.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
+		Requests: requests,
+	}).Context(ctx).Do()
+	if err != nil {
+		log.Printf("初期ヘッダー挿入失敗 (ID: %s): %v", docID, err)
+		// 致命的ではないとして続行
+	}
 
 	// オーナー権限を転送（設定されている場合）
 	if config.NotebookLMOwnerEmail != "" {
@@ -190,59 +220,58 @@ func (ns *NotebookLMSync) createUnifiedDoc(ctx context.Context, docName, parentI
 	return docID, nil
 }
 
-// appendToDoc はファイルの末尾にテキストを追記
+// appendToDoc はファイルの末尾にテキストを追記 (Docs APIを使用)
 func (ns *NotebookLMSync) appendToDoc(ctx context.Context, docID, mimeType, text string) error {
-	var currentContent []byte
-	var err error
+	if mimeType != "application/vnd.google-apps.document" {
+		return fmt.Errorf("非対応のMIMEタイプです: %s", mimeType)
+	}
 
-	if mimeType == "application/vnd.google-apps.document" {
-		// Googleドキュメントの場合は Export
-		resp, err := ns.driveClient.service.Files.Export(docID, "text/plain").Context(ctx).Download()
-		if err != nil {
-			return fmt.Errorf("ドキュメントエクスポート失敗: %w", err)
+	maxRetries := 5
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// EndOfSegmentLocation を使用して末尾に追記（より安定）
+		requests := []*docs.Request{
+			{
+				InsertText: &docs.InsertTextRequest{
+					EndOfSegmentLocation: &docs.EndOfSegmentLocation{},
+					Text:                 text,
+				},
+			},
 		}
-		defer resp.Body.Close()
-		currentContent, err = io.ReadAll(resp.Body)
-	} else {
-		// それ以外（Markdown等）は通常ダウンロード
-		resp, err := ns.driveClient.service.Files.Get(docID).
-			SupportsAllDrives(true).
-			Download()
-		if err != nil {
-			return fmt.Errorf("ファイルダウンロード失敗: %w", err)
+
+		// 実行
+		_, err := ns.driveClient.docsService.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
+			Requests: requests,
+		}).Context(ctx).Do()
+
+		if err == nil {
+			return nil
 		}
-		defer resp.Body.Close()
-		currentContent, err = io.ReadAll(resp.Body)
+
+		if ns.isRetryable(err) && attempt < maxRetries-1 {
+			log.Printf("追記リトライ中 (%d/%d): %v", attempt+1, maxRetries, err)
+			ns.backoff(attempt)
+			continue
+		}
+
+		return fmt.Errorf("ドキュメント追記失敗: %w", err)
 	}
 
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("内容読み込み失敗: %w", err)
+	return fmt.Errorf("最大リトライ回数を超えました")
+}
+
+// isRetryable はリトライすべきエラーかどうかを判定
+func (ns *NotebookLMSync) isRetryable(err error) bool {
+	if gerr, ok := err.(*googleapi.Error); ok {
+		return gerr.Code == 409 || gerr.Code == 429 || gerr.Code >= 500
 	}
+	return false
+}
 
-	// 新しい内容を追加
-	newContent := string(currentContent) + text
-
-	if mimeType == "application/vnd.google-apps.document" {
-		// Googleドキュメントの更新は今のところ text/plain での更新が難しいため、
-		// 追記ではなく、Google Docs API を使うか、一旦現状のまま（Markdown優先）とする。
-		// ここでは、ユーザーの希望通り Markdown 優先なので、Docの場合はログを出して何もしないか、
-		// あるいは上書きしてしまう検討が必要。
-		// ロバスト性のため、Docの場合はスキップして新規作成に誘導するのが安全だが、
-		// ここでは一旦更新を試みる。
-		log.Printf("Warning: 既存のファイルがGoogleドキュメントです。上書きまたはエラーの可能性があります。")
-	}
-
-	// ファイルを更新（MimeTypeを維持しつつメディアを更新）
-	_, err = ns.driveClient.service.Files.Update(docID, nil).
-		Media(bytes.NewReader([]byte(newContent)), googleapi.ContentType(mimeType)).
-		SupportsAllDrives(true).
-		Context(ctx).
-		Do()
-	if err != nil {
-		return fmt.Errorf("ファイル更新失敗: %w", err)
-	}
-
-	return nil
+// backoff は指数バックオフ
+func (ns *NotebookLMSync) backoff(attempt int) {
+	duration := time.Duration(1<<uint(attempt)) * time.Second
+	duration += time.Duration(rand.Intn(1000)) * time.Millisecond
+	time.Sleep(duration)
 }
 
 // markAsSynced はファイルを同期済みとしてマーク

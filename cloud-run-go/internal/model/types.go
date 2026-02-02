@@ -4,15 +4,15 @@ import "time"
 
 // AnalysisResult はGeminiによるドキュメント解析結果
 type AnalysisResult struct {
-	Category           string   `json:"category"`
-	ChildName          string   `json:"child_name"`
-	TargetAdult        string   `json:"target_adult"`
-	TargetGradeClass   string   `json:"target_grade_class"`
-	SubCategory        string   `json:"sub_category"`
-	IsPhoto            bool     `json:"is_photo"`
-	Date               string   `json:"date"`
-	Summary            string   `json:"summary"`
-	ConfidenceScore    float64  `json:"confidence_score"`
+	Category         string  `json:"category"`
+	ChildName        string  `json:"child_name"`
+	TargetAdult      string  `json:"target_adult"`
+	TargetGradeClass string  `json:"target_grade_class"`
+	SubCategory      string  `json:"sub_category"`
+	IsPhoto          bool    `json:"is_photo"`
+	Date             string  `json:"date"`
+	Summary          string  `json:"summary"`
+	ConfidenceScore  float64 `json:"confidence_score"`
 	// 内部処理用フィールド
 	FiscalYear         int      `json:"-"`
 	TargetChildren     []string `json:"-"`
@@ -29,12 +29,12 @@ type EventsAndTasks struct {
 
 // Event はカレンダーイベント
 type Event struct {
-	Title       string     `json:"title"`
-	Date        string     `json:"date"`
-	StartTime   *string    `json:"start_time"`
-	EndTime     *string    `json:"end_time"`
-	Location    *string    `json:"location"`
-	Description string     `json:"description"`
+	Title       string  `json:"title"`
+	Date        string  `json:"date"`
+	StartTime   *string `json:"start_time"`
+	EndTime     *string `json:"end_time"`
+	Location    *string `json:"location"`
+	Description string  `json:"description"`
 }
 
 // Task はタスク
@@ -76,3 +76,16 @@ const (
 	ProcessResultSkipped   ProcessResult = "SKIPPED"
 	ProcessResultError     ProcessResult = "ERROR"
 )
+
+// OCRBundle はOCR結果の構造化データ
+type OCRBundle struct {
+	OCRText         string   `json:"ocr_text"`
+	Facts           []string `json:"facts"`
+	Summary         string   `json:"summary"`
+	ConfidenceScore float64  `json:"confidence_score"`
+	Quality         struct {
+		Uncertain      bool   `json:"uncertain"`
+		NeedsHighModel bool   `json:"needs_high_model"`
+		Notes          string `json:"notes"`
+	} `json:"quality"`
+}

@@ -245,14 +245,42 @@ func (r *AIRouter) ExtractEventsAndTasks(ctx context.Context, data []byte, mimeT
 	return &result, nil
 }
 
-// ExtractOCRText はドキュメントからプレーンテキストを抽出（OCR）
+// ExtractOCRText はドキュメントからプレーンテキストを抽出（OCR）- 互換性維持用ラッパー
 func (r *AIRouter) ExtractOCRText(ctx context.Context, data []byte, mimeType string) (string, error) {
-	prompt := `この画像/ドキュメントに含まれるテキストをすべて抽出してください。
-書式は保持せず、プレーンテキストとして出力してください。
-読み取れるテキストがない場合は空文字を返してください。
-JSONではなく、プレーンテキストのみを出力してください。`
+	bundle, err := r.ExtractOCRBundle(ctx, data, mimeType)
+	if err != nil {
+		return "", err
+	}
+	return bundle.OCRText, nil
+}
+
+// ExtractOCRBundle はドキュメントからOCRテキスト、事実、要約を構造化して抽出
+func (r *AIRouter) ExtractOCRBundle(ctx context.Context, data []byte, mimeType string) (*model.OCRBundle, error) {
+	prompt := `この画像/ドキュメントを解析し、以下のJSON形式で回答してください。
+
+{
+  "ocr_text": "画像/ドキュメントに含まれるすべてのテキスト（OCR結果）",
+  "facts": [
+    "実際に本文から抽出した項目のみ"
+  ],
+  "summary": "要約（1-2文、曖昧な場合は空文字）",
+  "confidence_score": 0.0-1.0,
+  "quality": {
+    "uncertain": false,
+    "needs_high_model": false,
+    "notes": "読み取りに問題があれば記載"
+  }
+}
+
+重要ルール：
+- factsには実際に本文から抽出した項目のみを入れてください。説明文やテンプレ文は絶対に含めないでください。
+- factsには日付、金額、名前、住所など具体的な情報を抽出。推測は禁止。
+- 見つからない場合は "不明" を入れてください。最大10項目。
+- 読み取れない部分がある場合は quality.uncertain を true に。
+- summaryは確信がなければ空文字で可。`
 
 	genModel := r.client.GenerativeModel(config.GeminiModelsConfig.Flash)
+	genModel.GenerationConfig.ResponseMIMEType = "application/json"
 
 	var dataPart genai.Part
 	if mimeType == "application/pdf" {
@@ -273,16 +301,96 @@ JSONではなく、プレーンテキストのみを出力してください。`
 		genai.Text(prompt),
 	)
 	if err != nil {
-		return "", fmt.Errorf("OCR extraction failed: %w", err)
+		return nil, fmt.Errorf("OCR extraction failed: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return "", nil
+		return &model.OCRBundle{}, nil
 	}
 
-	text := fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
-	log.Printf("OCRテキスト抽出完了: %d文字", len(text))
-	return text, nil
+	// Partsを連結してテキストを取得
+	text := r.extractTextFromParts(resp.Candidates[0].Content.Parts)
+
+	var bundle model.OCRBundle
+	if err := json.Unmarshal([]byte(text), &bundle); err != nil {
+		// JSONパース失敗時はプレーンテキストとして扱う
+		log.Printf("OCRBundle JSONパース失敗、プレーンテキストとして処理: %v", err)
+		bundle.OCRText = text
+		bundle.ConfidenceScore = 0.5
+	}
+
+	// Flash結果が弱い場合はProにエスカレーション
+	if bundle.ConfidenceScore < config.AIRouter.ConfidenceThreshold ||
+		bundle.Quality.NeedsHighModel ||
+		(bundle.Quality.Uncertain && len(bundle.Facts) < 3) ||
+		len(bundle.OCRText) < 200 {
+		if config.AIRouter.EnableProEscalation {
+			log.Printf("OCR精度が低いためProにエスカレーション (score: %.2f, len: %d)", bundle.ConfidenceScore, len(bundle.OCRText))
+			return r.extractOCRBundleWithModel(ctx, data, mimeType, config.GeminiModelsConfig.Pro, prompt)
+		}
+	}
+
+	log.Printf("OCRBundle抽出完了: %d文字, %d facts", len(bundle.OCRText), len(bundle.Facts))
+	return &bundle, nil
+}
+
+// extractTextFromParts はPartsからテキストを安全に抽出
+func (r *AIRouter) extractTextFromParts(parts []genai.Part) string {
+	var result string
+	for _, part := range parts {
+		switch v := part.(type) {
+		case genai.Text:
+			result += string(v)
+		default:
+			// Text以外のPartは文字列化
+			result += fmt.Sprintf("%v", v)
+		}
+	}
+	return result
+}
+
+// extractOCRBundleWithModel は指定モデルでOCRBundle抽出
+func (r *AIRouter) extractOCRBundleWithModel(ctx context.Context, data []byte, mimeType, modelName, prompt string) (*model.OCRBundle, error) {
+	genModel := r.client.GenerativeModel(modelName)
+	genModel.GenerationConfig.ResponseMIMEType = "application/json"
+
+	var dataPart genai.Part
+	if mimeType == "application/pdf" {
+		dataPart = genai.Blob{
+			MIMEType: mimeType,
+			Data:     data,
+		}
+	} else {
+		format := "jpeg"
+		if len(mimeType) > 6 {
+			format = mimeType[6:]
+		}
+		dataPart = genai.ImageData(format, data)
+	}
+
+	resp, err := genModel.GenerateContent(ctx,
+		dataPart,
+		genai.Text(prompt),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("OCR extraction (Pro) failed: %w", err)
+	}
+
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		return &model.OCRBundle{}, nil
+	}
+
+	// Partsを連結してテキストを取得
+	text := r.extractTextFromParts(resp.Candidates[0].Content.Parts)
+
+	var bundle model.OCRBundle
+	if err := json.Unmarshal([]byte(text), &bundle); err != nil {
+		bundle.OCRText = text
+		bundle.ConfidenceScore = 0.5
+	}
+
+	log.Printf("OCRBundle抽出完了 (Pro): %d文字, %d facts", len(bundle.OCRText), len(bundle.Facts))
+	return &bundle, nil
 }
 
 // Close はクライアントをクローズ
