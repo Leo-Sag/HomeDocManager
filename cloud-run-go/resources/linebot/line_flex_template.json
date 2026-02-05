@@ -33,49 +33,15 @@
         "contents": [
           {
             "type": "text",
-            "text": "やること",
+            "text": "✨ AIチャット回答",
             "weight": "bold",
             "size": "md"
           },
           {
             "type": "text",
-            "text": "1) 下のボタンでNotebookLMを開く",
-            "wrap": true
-          },
-          {
-            "type": "text",
-            "text": "2) 質問を入力",
-            "wrap": true
-          },
-          {
-            "type": "text",
-            "text": "3) 回答の引用（根拠）を確認",
-            "wrap": true
-          }
-        ]
-      },
-      {
-        "type": "separator"
-      },
-      {
-        "type": "box",
-        "layout": "vertical",
-        "spacing": "sm",
-        "contents": [
-          {
-            "type": "text",
-            "text": "NotebookLM",
-            "weight": "bold",
-            "size": "md"
-          },
-          {
-            "type": "button",
-            "style": "primary",
-            "action": {
-              "type": "uri",
-              "label": "NotebookLMを開く",
-              "uri": "{{NOTEBOOKLM_URL}}"
-            }
+            "text": "そのまま知りたいことを送信してください。AIが家中の書類から回答を探します。",
+            "wrap": true,
+            "size": "sm"
           }
         ]
       },
@@ -96,21 +62,24 @@
           {
             "type": "text",
             "text": "{{EXAMPLE_1}}",
-            "wrap": true
+            "wrap": true,
+            "size": "sm"
           },
           {
             "type": "text",
             "text": "{{EXAMPLE_2}}",
-            "wrap": true
+            "wrap": true,
+            "size": "sm"
           }
         ]
       },
       {
         "type": "text",
-        "text": "※必要なら元ファイルも開いて確認してください。",
+        "text": "※回答には数秒かかります。そのままお待ちください。",
         "size": "xs",
         "color": "#888888",
-        "wrap": true
+        "wrap": true,
+        "margin": "md"
       }
     ],
     "paddingAll": "20px"

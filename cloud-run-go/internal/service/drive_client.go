@@ -91,6 +91,16 @@ func (ts *tokenSource) Token() (*oauth2.Token, error) {
 	}, nil
 }
 
+// GetDriveService は内部のDriveサービスを返す
+func (c *DriveClient) GetDriveService() *drive.Service {
+	return c.service
+}
+
+// GetDocsService は内部のDocsサービスを返す
+func (c *DriveClient) GetDocsService() *docs.Service {
+	return c.docsService
+}
+
 // GetFile はファイル情報を取得
 func (c *DriveClient) GetFile(ctx context.Context, fileID string) (*model.FileInfo, error) {
 	file, err := c.service.Files.Get(fileID).
@@ -402,12 +412,13 @@ func (c *DriveClient) GetChanges(ctx context.Context, pageToken string) ([]strin
 				continue
 			}
 
-			// PDFまたは画像のみ対象
+			// PDF、画像、またはGoogleドキュメントのみ対象
 			mimeType := change.File.MimeType
 			if mimeType == "application/pdf" ||
 				mimeType == "image/jpeg" ||
 				mimeType == "image/png" ||
-				mimeType == "image/gif" {
+				mimeType == "image/gif" ||
+				mimeType == "application/vnd.google-apps.document" {
 				fileIDs = append(fileIDs, change.FileId)
 				log.Printf("Change detected: %s (%s)", change.File.Name, change.FileId)
 			}
