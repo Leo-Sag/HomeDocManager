@@ -7,13 +7,13 @@
     "contents": [
       {
         "type": "text",
-        "text": "使い方",
+        "text": "❓ 使い方・カテゴリ選択",
         "weight": "bold",
         "size": "xl"
       },
       {
         "type": "text",
-        "text": "カテゴリを選んで、NotebookLMで質問するだけ",
+        "text": "知りたい内容を選んで、そのままメッセージを送ってください。",
         "size": "sm",
         "color": "#666666",
         "wrap": true
@@ -24,58 +24,30 @@
   "body": {
     "type": "box",
     "layout": "vertical",
-    "spacing": "md",
+    "spacing": "lg",
     "contents": [
       {
         "type": "box",
         "layout": "vertical",
-        "spacing": "sm",
+        "spacing": "md",
         "contents": [
-          {
-            "type": "text",
-            "text": "手順",
-            "weight": "bold",
-            "size": "md"
-          },
-          {
-            "type": "text",
-            "text": "1) 下のメニューからカテゴリを押す",
-            "wrap": true
-          },
-          {
-            "type": "text",
-            "text": "2) 表示されたリンクを開く",
-            "wrap": true
-          },
-          {
-            "type": "text",
-            "text": "3) NotebookLMに質問を入力",
-            "wrap": true
-          }
-        ]
-      },
-      {
-        "type": "separator"
-      },
-      {
-        "type": "box",
-        "layout": "vertical",
-        "spacing": "sm",
-        "contents": [
-          {
-            "type": "text",
-            "text": "NotebookLMを開く",
-            "weight": "bold",
-            "size": "md"
-          },
           {
             "type": "button",
-            "style": "primary",
             "action": {
-              "type": "uri",
-              "label": "NotebookLMを開く",
-              "uri": "{{NOTEBOOKLM_URL}}"
-            }
+              "type": "message",
+              "label": "🏠 生活について聞く",
+              "text": "生活："
+            },
+            "height": "sm",
+            "style": "primary"
+          },
+          {
+            "type": "text",
+            "text": "例：火災保険の更新はいつ？ / 自治体の封筒の内容は？",
+            "size": "xs",
+            "color": "#888888",
+            "wrap": true,
+            "margin": "sm"
           }
         ]
       },
@@ -85,46 +57,127 @@
       {
         "type": "box",
         "layout": "vertical",
-        "spacing": "sm",
+        "spacing": "md",
         "contents": [
           {
-            "type": "text",
-            "text": "質問例",
-            "weight": "bold",
-            "size": "md"
+            "type": "button",
+            "action": {
+              "type": "message",
+              "label": "💰 お金について聞く",
+              "text": "お金："
+            },
+            "height": "sm",
+            "style": "primary"
           },
           {
             "type": "text",
-            "text": "・火災保険の更新月は？",
-            "wrap": true
-          },
-          {
-            "type": "text",
-            "text": "・学校の提出書類の締切は？",
-            "wrap": true
-          },
-          {
-            "type": "text",
-            "text": "・この家電のエラーE2の対処は？",
-            "wrap": true
+            "text": "例：今年のふるさと納税先は？ / 生命保険の保障内容は？",
+            "size": "xs",
+            "color": "#888888",
+            "wrap": true,
+            "margin": "sm"
           }
         ]
       },
       {
-        "type": "text",
-        "text": "📌 迷ったらそのまま質問してOKです。\n✅ コツ：質問の最初に「生活：」「医療：」など付けると探しやすいです。",
-        "size": "sm",
-        "color": "#666666",
-        "wrap": true
+        "type": "separator"
       },
       {
-        "type": "text",
-        "text": "※回答には根拠（引用）が表示されます。必要なら元ファイルも開いて確認してください。",
-        "size": "xs",
-        "color": "#888888",
-        "wrap": true
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "md",
+        "contents": [
+          {
+            "type": "button",
+            "action": {
+              "type": "message",
+              "label": "👶 子供について聞く",
+              "text": "子供："
+            },
+            "height": "sm",
+            "style": "primary"
+          },
+          {
+            "type": "text",
+            "text": "例：提出物の締切は？ / 習い事の連絡先は？",
+            "size": "xs",
+            "color": "#888888",
+            "wrap": true,
+            "margin": "sm"
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "md",
+        "contents": [
+          {
+            "type": "button",
+            "action": {
+              "type": "message",
+              "label": "🏥 医療について聞く",
+              "text": "医療："
+            },
+            "height": "sm",
+            "style": "primary"
+          },
+          {
+            "type": "text",
+            "text": "例：予防接種の予定は？ / 診療明細の内容は？",
+            "size": "xs",
+            "color": "#888888",
+            "wrap": true,
+            "margin": "sm"
+          }
+        ]
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "md",
+        "contents": [
+          {
+            "type": "button",
+            "action": {
+              "type": "message",
+              "label": "📚 ライブラリについて聞く",
+              "text": "ライブラリ："
+            },
+            "height": "sm",
+            "style": "primary"
+          },
+          {
+            "type": "text",
+            "text": "例：家電のエラー対処法は？ / 取説PDFはどこ？",
+            "size": "xs",
+            "color": "#888888",
+            "wrap": true,
+            "margin": "sm"
+          }
+        ]
       }
     ],
     "paddingAll": "20px"
+  },
+  "footer": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+      {
+        "type": "text",
+        "text": "💡 迷ったらそのまま（カテゴリなしで）質問してOKです。",
+        "size": "xs",
+        "color": "#666666",
+        "align": "center",
+        "wrap": true
+      }
+    ]
   }
 }

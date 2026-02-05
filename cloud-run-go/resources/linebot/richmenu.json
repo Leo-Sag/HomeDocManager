@@ -1,0 +1,35 @@
+{
+    "size": {
+        "width": 1200,
+        "height": 405
+    },
+    "selected": true,
+    "name": "RAG_Simplified_Menu",
+    "chatBarText": "メニュー",
+    "areas": [
+        {
+            "bounds": {
+                "x": 0,
+                "y": 0,
+                "width": 800,
+                "height": 405
+            },
+            "action": {
+                "type": "message",
+                "text": "__AI_TIPS__"
+            }
+        },
+        {
+            "bounds": {
+                "x": 800,
+                "y": 0,
+                "width": 400,
+                "height": 405
+            },
+            "action": {
+                "type": "message",
+                "text": "__HELP__"
+            }
+        }
+    ]
+}

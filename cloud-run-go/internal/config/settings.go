@@ -23,13 +23,15 @@ const (
 
 // Gemini APIモデル設定
 type GeminiModels struct {
-	Flash string
-	Pro   string
+	Flash   string
+	Pro     string
+	LineRAG string // LINE Bot RAG専用（別クォータで運用）
 }
 
 var GeminiModelsConfig = GeminiModels{
-	Flash: "gemini-3-flash-preview",
-	Pro:   "gemini-3-pro-preview",
+	Flash:   "gemini-3-flash-preview",
+	Pro:     "gemini-3-pro-preview",
+	LineRAG: "gemini-3-flash-preview",
 }
 
 // AIルーター設定
@@ -88,6 +90,34 @@ var AdultAliases = map[string][]string{
 	"怜央奈": {"怜央奈", "Leo", "Reona", "れおな", "レオナ"},
 	"今日子": {"今日子", "Kyoko", "きょうこ", "綿谷", "Wataya"},
 	"えりか": {"えりか", "Erika", "エリカ", "Эрика"},
+}
+
+// LINE User ID → 大人メンバー名マッピング
+// 実際のUser IDは環境変数またはJSON設定ファイルから読み込み推奨
+// 子供の情報はどの大人ユーザーからも参照可能
+var LineUserMap = map[string]string{
+	// TODO: 実際のLINE User IDを設定
+	// "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "怜央奈",
+	// "Uyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy": "今日子",
+}
+
+// LINE User設定ファイルパス
+var LineUserSettingsPath = GetEnv("LINE_USER_SETTINGS_PATH", "resources/linebot/line_user_settings.json")
+
+// 家族グループID（自動識別に利用）
+var LineFamilyGroupID = GetEnv("LINE_FAMILY_GROUP_ID", "")
+
+// RAGソース対象 Google Drive フォルダID (自動同期用)
+var LineRAGSourceFolderIDs = []string{
+	FolderIDs["NOTEBOOKLM_SYNC"],
+}
+
+// RAG対象 Google Docs ID
+// 家族全員の情報が含まれるドキュメント
+var RAGDocumentIDs = []string{
+	// TODO: 実際のGoogle Docs IDを設定
+	// "1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxABC", // 生活情報
+	// "2xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxDEF", // マネー情報
 }
 
 // 年度サブフォルダを作成するカテゴリ
