@@ -1,6 +1,7 @@
 {
     "flex_template_path": "resources/linebot/line_flex_template.json",
     "help_template_path": "resources/linebot/line_flex_help_message.json",
+    "ai_tips_template_path": "resources/linebot/line_flex_ai_tips.json",
     "notebooklm_urls": {
         "default": "https://notebooklm.google.com/notebook/a10ef8f1-bd19-4ac8-bee9-3e1a02120205",
         "life": "",
@@ -8,7 +9,8 @@
         "children": "",
         "medical": "",
         "library": "",
-        "help": ""
+        "help": "",
+        "aitips": ""
     },
     "triggers": {
         "life": "__CAT_LIFE__",
@@ -16,15 +18,19 @@
         "children": "__CAT_CHILDREN__",
         "medical": "__CAT_MEDICAL__",
         "library": "__LIBRARY__",
-        "help": "__HELP__"
+        "help": "__HELP__",
+        "aitips": "__AI_TIPS__",
+        "sync": "#rag",
+        "members": "#メンバー登録"
     },
     "category_labels": {
-        "life": "🏠 生活",
-        "money": "💰 お金",
-        "children": "👶 子供",
-        "medical": "🏥 医療",
-        "library": "📚 ライブラリ",
-        "help": "❓ 迷ったら",
+        "life": "🏠 生活についてAIに聞く",
+        "money": "💰 お金についてAIに聞く",
+        "children": "👶 子供についてAIに聞く",
+        "medical": "🏥 医療についてAIに聞く",
+        "library": "📚 ライブラリについてAIに聞く",
+        "help": "❓ 使い方ガイド",
+        "aitips": "✨ AI相談のコツ",
         "unknown": "カテゴリ選択"
     },
     "examples": {
@@ -63,11 +69,11 @@
         "current_prefix": "✅ ",
         "order": [
             "help",
-            "life",
-            "money",
-            "children",
-            "medical",
-            "library"
+            "aitips"
         ]
+    },
+    "category_labels_extra": {
+        "sync": "🔄 知識更新 (#rag)",
+        "members": "👤 メンバー登録"
     }
 }

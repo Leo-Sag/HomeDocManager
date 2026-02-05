@@ -3,6 +3,7 @@ package linebot
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -16,13 +17,14 @@ type QuickReplyConfig struct {
 }
 
 type Settings struct {
-	FlexTemplatePath string              `json:"flex_template_path"`
-	HelpTemplatePath string              `json:"help_template_path"`
-	NotebookLMURLs   map[string]string   `json:"notebooklm_urls"`
-	Triggers         map[string]string   `json:"triggers"`
-	CategoryLabels   map[string]string   `json:"category_labels"`
-	Examples         map[string][]string `json:"examples"`
-	QuickReply       QuickReplyConfig    `json:"quick_reply"`
+	FlexTemplatePath   string              `json:"flex_template_path"`
+	HelpTemplatePath   string              `json:"help_template_path"`
+	AITipsTemplatePath string              `json:"ai_tips_template_path"`
+	NotebookLMURLs     map[string]string   `json:"notebooklm_urls"`
+	Triggers           map[string]string   `json:"triggers"`
+	CategoryLabels     map[string]string   `json:"category_labels"`
+	Examples           map[string][]string `json:"examples"`
+	QuickReply         QuickReplyConfig    `json:"quick_reply"`
 }
 
 type FlexTemplate struct {
@@ -30,10 +32,11 @@ type FlexTemplate struct {
 }
 
 type Service struct {
-	settings     *Settings
-	template     *FlexTemplate
-	helpTemplate *FlexTemplate
-	mu           sync.RWMutex
+	settings       *Settings
+	template       *FlexTemplate
+	helpTemplate   *FlexTemplate
+	aiTipsTemplate *FlexTemplate
+	mu             sync.RWMutex
 }
 
 func NewService(settingsPath string) (*Service, error) {
@@ -52,10 +55,17 @@ func NewService(settingsPath string) (*Service, error) {
 		return nil, fmt.Errorf("failed to load help template from %s: %w", s.HelpTemplatePath, err)
 	}
 
+	a, err := loadTemplate(s.AITipsTemplatePath)
+	if err != nil {
+		// AI Tips テンプレートがない場合は警告のみ（後方互換性）
+		log.Printf("Warning: ai_tips_template_path not found or failed to load: %v", err)
+	}
+
 	return &Service{
-		settings:     s,
-		template:     t,
-		helpTemplate: h,
+		settings:       s,
+		template:       t,
+		helpTemplate:   h,
+		aiTipsTemplate: a,
 	}, nil
 }
 
@@ -108,11 +118,19 @@ func (s *Service) BuildFlexMessage(trigger string) (string, map[string]interface
 	}
 
 	// 使い方(help)の場合は専用テンプレ
-	if category == "help" {
+	if category == "help" || trigger == "__HELP__" {
 		contents, err := s.helpTemplate.build(map[string]string{
 			"NOTEBOOKLM_URL": url,
 		})
 		return category, contents, err
+	}
+
+	// AI Tipsの場合は専用テンプレ
+	if category == "aitips" || trigger == "__AI_TIPS__" {
+		if s.aiTipsTemplate != nil {
+			contents, err := s.aiTipsTemplate.build(nil)
+			return category, contents, err
+		}
 	}
 
 	label := s.settings.CategoryLabels[category]
@@ -219,4 +237,23 @@ func (s *Service) GetQuickReplyItems(current string) []map[string]interface{} {
 		})
 	}
 	return items
+}
+
+// IsTriggerWord はテキストがトリガーワードに一致するかを判定
+// トリガーワードの場合はFlex Messageモード、それ以外はRAGモードで処理
+func (s *Service) IsTriggerWord(text string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// 特殊な内部トリガー（リッチメニュー用）
+	if text == "__HELP__" || text == "__AI_TIPS__" {
+		return true
+	}
+
+	for _, trigger := range s.settings.Triggers {
+		if trigger == text {
+			return true
+		}
+	}
+	return false
 }

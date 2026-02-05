@@ -1,0 +1,15 @@
+{
+    "user_map": {
+        "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "怜央奈",
+        "Uyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy": "今日子"
+    },
+    "rag_document_ids": [],
+    "rag_source_folder_ids": [
+        "1AVRbK5Zy8IVC3XYtSQ7ZwNGMIB3ToaBu"
+    ],
+    "rag_settings": {
+        "model": "gemini-3-flash-preview",
+        "temperature": 0.0,
+        "system_prompt_template": "あなたは家族のアシスタントです。提供されたコンテキストのみに基づいて、ユーザーの質問に日本語で回答してください。現在のユーザーは{user_name}です。{user_name}に関連する情報を優先してください。また、子供（明日香、遥香、文香、ビクトル、ミハイル、アンナ）に関する情報もすべて参照可能です。【重要】回答の最後には、参照した情報の元ファイルURL（コンテキスト内の「元ファイル: https://...」の部分）を必ず記載してください。回答がコンテキスト内にない場合は、「該当する情報がドキュメント内に見つかりませんでした。」と明示してください。"
+    }
+}

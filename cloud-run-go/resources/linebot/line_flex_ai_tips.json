@@ -1,0 +1,113 @@
+{
+    "type": "bubble",
+    "size": "giga",
+    "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+            {
+                "type": "text",
+                "text": "✨ AI相談のコツ",
+                "weight": "bold",
+                "size": "xl",
+                "color": "#1DB446"
+            },
+            {
+                "type": "text",
+                "text": "家中の書類から、AIが直接お答えします",
+                "size": "sm",
+                "color": "#666666",
+                "wrap": true
+            }
+        ],
+        "paddingAll": "20px"
+    },
+    "body": {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "md",
+        "contents": [
+            {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "💡 上手に聞くには？",
+                        "weight": "bold",
+                        "size": "md"
+                    },
+                    {
+                        "type": "text",
+                        "text": "・具体的な単語を入れる（例：火災保険、ワクチンなど）",
+                        "wrap": true,
+                        "size": "sm"
+                    },
+                    {
+                        "type": "text",
+                        "text": "・「いつ？」「誰の？」など聞きたいことを明確に",
+                        "wrap": true,
+                        "size": "sm"
+                    }
+                ]
+            },
+            {
+                "type": "separator"
+            },
+            {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "📌 カテゴリを付けると正確さUP！",
+                        "weight": "bold",
+                        "size": "md"
+                    },
+                    {
+                        "type": "text",
+                        "text": "質問の最初にカテゴリを付けると、AIがより正しく書類を見つけられます。",
+                        "wrap": true,
+                        "size": "sm"
+                    },
+                    {
+                        "type": "box",
+                        "layout": "horizontal",
+                        "spacing": "xs",
+                        "contents": [
+                            {
+                                "type": "button",
+                                "action": {
+                                    "type": "message",
+                                    "label": "生活について",
+                                    "text": "生活："
+                                },
+                                "height": "sm",
+                                "style": "secondary"
+                            },
+                            {
+                                "type": "button",
+                                "action": {
+                                    "type": "message",
+                                    "label": "お金について",
+                                    "text": "お金："
+                                },
+                                "height": "sm",
+                                "style": "secondary"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "text",
+                "text": "※回答には数秒かかります。そのままお待ちください。",
+                "size": "xs",
+                "color": "#888888",
+                "margin": "md"
+            }
+        ]
+    }
+}

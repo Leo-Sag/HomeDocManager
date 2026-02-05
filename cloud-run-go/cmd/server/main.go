@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 
+	secretmanager "cloud.google.com/go/secretmanager/apiv1"
+	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	"github.com/gin-gonic/gin"
 	"github.com/leo-sagawa/homedocmanager/internal/config"
 	"github.com/leo-sagawa/homedocmanager/internal/handler"
@@ -62,7 +64,28 @@ func main() {
 		if err != nil {
 			log.Printf("Warning: LINE Bot Service initialization failed: %v", err)
 		} else {
-			lineHandler, err := linebot.NewHandler(config.LineChannelSecret, config.LineChannelAccessToken, lineService)
+			// RAGService初期化（オプショナル）
+			var ragService *linebot.RAGService
+			geminiAPIKey := os.Getenv("GEMINI_API_KEY")
+			if geminiAPIKey == "" {
+				// Secret Managerから取得を試行
+				geminiAPIKey = getSecretValue(ctx, config.SecretGeminiAPIKey)
+			}
+			if geminiAPIKey != "" {
+				ragService, err = linebot.NewRAGService(ctx, geminiAPIKey, config.LineUserSettingsPath, services.DriveClient)
+				if err != nil {
+					log.Printf("Warning: RAG Service initialization failed: %v", err)
+					ragService = nil
+				} else if ragService != nil {
+					log.Printf("RAG Service initialized with model: %s", config.GeminiModelsConfig.LineRAG)
+				} else {
+					log.Printf("Info: RAG Service disabled (no documents or folders configured)")
+				}
+			} else {
+				log.Printf("Info: GEMINI_API_KEY not set, RAG Service disabled")
+			}
+
+			lineHandler, err := linebot.NewHandler(config.LineChannelSecret, config.LineChannelAccessToken, lineService, ragService)
 			if err != nil {
 				log.Printf("Warning: LINE Bot Handler initialization failed: %v", err)
 			} else {
@@ -197,4 +220,32 @@ func initServices(ctx context.Context) (*service.Services, error) {
 		GradeManager:   gradeManager,
 		FileSorter:     fileSorter,
 	}, nil
+}
+
+// getSecretValue はSecret Managerからシークレット値を取得
+func getSecretValue(ctx context.Context, secretName string) string {
+	// Secret Managerクライアントを作成
+	client, err := secretmanager.NewClient(ctx)
+	if err != nil {
+		log.Printf("Secret Manager client creation failed: %v", err)
+		return ""
+	}
+	defer client.Close()
+
+	// Secret Managerからキーを取得
+	name := fmt.Sprintf("projects/%s/secrets/%s/versions/latest",
+		config.GCPProjectID,
+		secretName)
+
+	req := &secretmanagerpb.AccessSecretVersionRequest{
+		Name: name,
+	}
+
+	result, err := client.AccessSecretVersion(ctx, req)
+	if err != nil {
+		log.Printf("Secret Manager access failed for %s: %v", secretName, err)
+		return ""
+	}
+
+	return string(result.Payload.Data)
 }
