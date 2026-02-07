@@ -21,7 +21,11 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 ### NotebookLM 同期
 
 - 処理済みドキュメントの OCR テキスト・事実・要約を年度別・カテゴリ別の Google Docs に追記
-- 対象カテゴリ: マネー・税務 / プロジェクト・資産 / ライフ・行政 / 子供・教育 / ヘルス・医療 / ライブラリ
+- **除外ベース方式**: 以下を除くすべてのカテゴリが同期対象
+  - `50_写真・その他` - 画像主体のため転記不可
+  - `40_子供・教育/03_記録・作品・成績` - 画像・作品のため転記不可
+- NotebookLM カテゴリマッピング: life / money / children / medical / library / assets
+- OAuth 認証によりユーザーアカウント配下に統合ドキュメントを作成（SA 容量制限回避）
 - ファイルプロパティによる同期済みマーカーで重複同期を防止
 
 ### Google Photos 連携
@@ -31,9 +35,11 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 
 ### LINE Bot（RAG 対応）
 
-- 蓄積ドキュメントに対する自然言語 Q&A（RAG）
+- NotebookLM 同期済みドキュメントに対する自然言語 Q&A（RAG）
+- Gemini Flash によるベクトル検索・意味理解ベースの回答生成
 - 回答のソース元 Google Drive URL を自動提示
 - カテゴリ別ナビゲーション（Flex Message）・クイックリプライ対応
+- 家族メンバーごとのアクセス制御（大人情報 vs 子供情報の権限管理）
 
 ### 管理・運用
 
@@ -123,12 +129,13 @@ HomeDocManager/
 | Web フレームワーク | Gin |
 | AI | Gemini 3 Flash / Pro (google/generative-ai-go) |
 | Google APIs | Drive v3, Docs v1, Calendar v3, Tasks v1, Photos (OAuth REST) |
-| 認証 | OAuth 2.0 + Service Account フォールバック |
+| 認証 | **OAuth 2.0 優先** + Service Account フォールバック |
 | シークレット管理 | Google Secret Manager |
 | メッセージング | LINE Bot SDK v7 |
 | コンテナ | Docker (マルチステージ Alpine) |
 | PDF 処理 | poppler-utils (pdftoppm) |
 | ログ | log/slog (Cloud Logging 互換 JSON) |
+| 自動運用 | Cloud Scheduler (Watch 更新 + Inbox スキャン) |
 
 ## API エンドポイント
 
@@ -165,21 +172,21 @@ HomeDocManager/
 | 変数 | 説明 |
 |------|------|
 | `GEMINI_API_KEY` | Gemini API キー |
-| `OAUTH_REFRESH_TOKEN` | OAuth リフレッシュトークン (Drive / Photos / Calendar / Tasks) |
+| `OAUTH_REFRESH_TOKEN` | **OAuth リフレッシュトークン** (Drive / Photos / Calendar / Tasks / Docs) - NotebookLM 作成に必須 |
 | `ADMIN_TOKEN` | 管理エンドポイント認証トークン |
 | `DRIVE_WEBHOOK_TOKEN` | Drive Watch webhook 検証トークン |
+| `LINE_CHANNEL_SECRET` | LINE Bot チャンネルシークレット（オプション） |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Bot チャンネルアクセストークン（オプション） |
 
 ### オプション
 
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
 | `ADMIN_AUTH_MODE` | `required` | 管理認証モード (`required` / `optional` / `disabled`) |
-| `ENABLE_COMBINED_GEMINI` | `true` | 統合 Gemini 呼び出しの有効化 |
-| `LOG_FORMAT` | `text` | ログ形式 (`json` で Cloud Logging 互換 JSON) |
+| `ENABLE_COMBINED_GEMINI` | `true` | 統合 Gemini 呼び出しの有効化（分類・予定・OCR を 1 回の API 呼び出しで実行） |
+| `LOG_FORMAT` | `json` | ログ形式 (`json` で Cloud Logging 互換 JSON, `text` で人間可読） |
 | `LOG_LEVEL` | `info` | ログレベル (`debug` / `info` / `warn` / `error`) |
 | `WEBHOOK_URL` | 自動生成 | Drive Watch webhook URL の明示指定 |
-| `LINE_CHANNEL_SECRET` | - | LINE Bot チャンネルシークレット |
-| `LINE_CHANNEL_ACCESS_TOKEN` | - | LINE Bot チャンネルアクセストークン |
 | `PORT` | `8080` | サーバーポート |
 
 ## Cloud Run デプロイ設定
@@ -211,6 +218,14 @@ HomeDocManager/
 
 ## セットアップ
 
+### 前提条件
+
+- GCP プロジェクト作成済み
+- OAuth 2.0 クライアント（デスクトップアプリ）作成済み
+- Drive / Docs / Calendar / Tasks / Photos Library API 有効化済み
+- Service Account `homedocmanager-sa@{PROJECT_ID}.iam.gserviceaccount.com` 作成済み
+  - 権限: Secret Manager Secret Accessor, Cloud Run Invoker
+
 ### 1. OAuth 認証情報の取得
 
 ```bash
@@ -219,6 +234,8 @@ go run tools/setup_oauth.go
 ```
 
 取得したリフレッシュトークンを Secret Manager に登録します。
+
+> **重要**: NotebookLM 同期機能を使用する場合、OAuth リフレッシュトークンは**必須**です。Service Account では容量制限（15GB）により大量ドキュメントの作成ができません。
 
 ### 2. Secret Manager 登録
 
@@ -230,6 +247,39 @@ echo -n "$ADMIN_TOKEN" | gcloud secrets versions add ADMIN_TOKEN --data-file=-
 echo -n "$DRIVE_WEBHOOK_TOKEN" | gcloud secrets versions add DRIVE_WEBHOOK_TOKEN --data-file=-
 echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets versions add GEMINI_API_KEY --data-file=-
 echo -n "YOUR_REFRESH_TOKEN" | gcloud secrets versions add OAUTH_REFRESH_TOKEN --data-file=-
+
+# LINE Bot を使用する場合（オプション）
+echo -n "YOUR_LINE_CHANNEL_SECRET" | gcloud secrets versions add LINE_CHANNEL_SECRET --data-file=-
+echo -n "YOUR_LINE_CHANNEL_ACCESS_TOKEN" | gcloud secrets versions add LINE_CHANNEL_ACCESS_TOKEN --data-file=-
+```
+
+**Service Account への Secret アクセス権限付与**:
+
+```bash
+gcloud secrets add-iam-policy-binding ADMIN_TOKEN \
+  --member="serviceAccount:homedocmanager-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding DRIVE_WEBHOOK_TOKEN \
+  --member="serviceAccount:homedocmanager-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+  --member="serviceAccount:homedocmanager-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding OAUTH_REFRESH_TOKEN \
+  --member="serviceAccount:homedocmanager-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+# LINE Bot 用（オプション）
+gcloud secrets add-iam-policy-binding LINE_CHANNEL_SECRET \
+  --member="serviceAccount:homedocmanager-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding LINE_CHANNEL_ACCESS_TOKEN \
+  --member="serviceAccount:homedocmanager-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
 ```
 
 ### 3. デプロイ
@@ -263,8 +313,90 @@ SERVICE_URL="$(gcloud run services describe homedocmanager-go \
 curl -sS "$SERVICE_URL/health"
 
 # 管理認証の確認
+ADMIN_TOKEN="$(gcloud secrets versions access latest --secret=ADMIN_TOKEN)"
 curl -i "$SERVICE_URL/admin/ping" -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Watch 状態確認（自動起動されているはず）
+curl -sS "$SERVICE_URL/admin/watch/status" -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
+
+### 5. Cloud Scheduler セットアップ
+
+Drive Watch の自動更新と Inbox スキャンのため、Cloud Scheduler を設定します。
+
+```bash
+PROJECT_ID="your-project-id"
+SERVICE_URL="https://homedocmanager-go-{PROJECT_NUMBER}.asia-northeast1.run.app"
+ADMIN_TOKEN="$(gcloud secrets versions access latest --secret=ADMIN_TOKEN)"
+
+# Watch 自動更新（毎週月・木 12:00 JST）
+gcloud scheduler jobs create http watch-renew-daily \
+  --schedule="0 12 * * 1,4" \
+  --time-zone="Asia/Tokyo" \
+  --uri="${SERVICE_URL}/admin/watch/renew" \
+  --http-method=POST \
+  --headers="Content-Type=application/json,Authorization=Bearer ${ADMIN_TOKEN}" \
+  --location=asia-northeast1 \
+  --project="${PROJECT_ID}"
+
+# Inbox 定期スキャン（毎時）
+gcloud scheduler jobs create http inbox-trigger-hourly \
+  --schedule="0 * * * *" \
+  --time-zone="UTC" \
+  --uri="${SERVICE_URL}/trigger/inbox" \
+  --http-method=GET \
+  --headers="Authorization=Bearer ${ADMIN_TOKEN}" \
+  --location=asia-northeast1 \
+  --project="${PROJECT_ID}"
+```
+
+**ジョブの手動実行テスト**:
+
+```bash
+gcloud scheduler jobs run watch-renew-daily --location=asia-northeast1
+gcloud scheduler jobs run inbox-trigger-hourly --location=asia-northeast1
+```
+
+## トラブルシューティング
+
+### NotebookLM 同期が失敗する（storageQuotaExceeded）
+
+**原因**: OAuth リフレッシュトークンが設定されておらず、Service Account で動作している（15GB 容量制限）
+
+**解決策**:
+
+1. `tools/setup_oauth.go` でリフレッシュトークンを再取得
+2. Secret Manager に `OAUTH_REFRESH_TOKEN` を登録
+3. Service Account に Secret アクセス権限を付与
+4. **重要**: `deploy-cloudbuild.sh` の `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` がデフォルト値として設定されていることを確認
+5. 再デプロイ
+
+### Drive Watch が動作しない
+
+**症状**: Inbox にファイルを追加しても処理されない
+
+**確認手順**:
+
+1. Watch 状態確認: `GET /admin/watch/status`
+2. ログ確認: `gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=homedocmanager-go"`
+3. Cloud Scheduler ジョブの実行履歴確認
+
+**解決策**:
+
+- インスタンスは起動時に自動で Watch を開始するため、サービス再起動で復旧する場合が多い
+- Cloud Scheduler `watch-renew-daily` が正常に実行されているか確認
+- `DRIVE_WEBHOOK_TOKEN` が正しく設定されているか確認
+
+### LINE Bot が反応しない
+
+**原因**: LINE シークレットが Secret Manager に登録されていない、または SA 権限がない
+
+**解決策**:
+
+1. `LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN` を Secret Manager に登録
+2. Service Account に Secret アクセス権限を付与
+3. 再デプロイ
+4. ログで `LINE Bot Webhook registered at /callback` が出力されることを確認
 
 ## テスト
 
@@ -272,6 +404,26 @@ curl -i "$SERVICE_URL/admin/ping" -H "Authorization: Bearer $ADMIN_TOKEN"
 cd cloud-run-go
 go test ./...
 ```
+
+## アーキテクチャ上の注意点
+
+### OAuth vs Service Account
+
+- **OAuth 優先**: NotebookLM 同期・Google Photos アップロードには OAuth リフレッシュトークンが必須
+- **SA フォールバック**: OAuth が設定されていない場合のみ Service Account にフォールバック
+- **容量制限**: Service Account は Drive 容量 15GB 制限があるため、大量ファイル処理には OAuth が必須
+
+### Cloud Run のスケール to ゼロ
+
+- `min-instances=0` のため、リクエストがない期間はインスタンスが停止
+- 起動時に自動で Drive Watch を開始するため、コールドスタート後も自動復旧
+- Cloud Scheduler により定期的に Watch 更新・Inbox スキャンが実行されるため、長期稼働時も安定
+
+### Gemini API の統合呼び出し
+
+- `ENABLE_COMBINED_GEMINI=true` で、分類・予定抽出・OCR を 1 回の API 呼び出しで実行
+- 入力トークン削減により Gemini API コストを約 66% 削減
+- 個別呼び出しとの互換性を保つため、フォールバック処理も実装
 
 ## ライセンス
 
