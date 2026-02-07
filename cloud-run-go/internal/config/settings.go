@@ -139,14 +139,14 @@ var CategoriesWithYearSubfolder = []string{
 	"40_子供・教育",
 }
 
-// NotebookLM同期対象カテゴリ
-var NotebookLMSyncCategories = []string{
-	"10_マネー・税務",
-	"20_プロジェクト・資産",
-	"30_ライフ・行政",
-	"40_子供・教育",
-	"60_ヘルス・医療",
-	"90_ライブラリ",
+// NotebookLM同期除外カテゴリ（画像主体のため転記不可）
+var NotebookLMSyncExcludeCategories = map[string]bool{
+	"50_写真・その他": true,
+}
+
+// NotebookLM同期除外サブカテゴリ（カテゴリ → 除外サブカテゴリ一覧）
+var NotebookLMSyncExcludeSubCategories = map[string][]string{
+	"40_子供・教育": {"03_記録・作品・成績"},
 }
 
 // NotebookLMカテゴリキー

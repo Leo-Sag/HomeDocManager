@@ -29,14 +29,25 @@ func NewNotebookLMSync(ctx context.Context, driveClient *DriveClient) (*Notebook
 	}, nil
 }
 
-// ShouldSync は同期対象のカテゴリかどうかを判定
-func (ns *NotebookLMSync) ShouldSync(category string) bool {
-	for _, c := range config.NotebookLMSyncCategories {
-		if c == category {
-			return true
+// ShouldSync は同期対象のカテゴリ・サブカテゴリかどうかを判定（除外ベース）
+func (ns *NotebookLMSync) ShouldSync(category, subCategory string) bool {
+	// カテゴリ全体が除外されているか
+	if config.NotebookLMSyncExcludeCategories[category] {
+		return false
+	}
+	// サブカテゴリが除外されているか
+	if excludedSubs, ok := config.NotebookLMSyncExcludeSubCategories[category]; ok {
+		for _, sub := range excludedSubs {
+			if sub == subCategory {
+				return false
+			}
 		}
 	}
-	return false
+	// NotebookLMカテゴリマッピングが存在するか
+	if _, exists := config.NotebookLMCategoryMap[category]; !exists {
+		return false
+	}
+	return true
 }
 
 // SyncFile はファイルをNotebookLMに同期

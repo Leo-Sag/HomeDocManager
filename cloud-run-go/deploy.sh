@@ -52,6 +52,11 @@ if [ -n "${USE_SECRET_MANAGER}" ]; then
     else
         echo -e "${YELLOW}Warning: OAUTH_REFRESH_TOKEN secret not found; skipping injection${NC}"
     fi
+    if gcloud secrets describe LINE_CHANNEL_SECRET --project "${PROJECT_ID}" >/dev/null 2>&1; then
+        SECRETS="${SECRETS},LINE_CHANNEL_SECRET=LINE_CHANNEL_SECRET:latest,LINE_CHANNEL_ACCESS_TOKEN=LINE_CHANNEL_ACCESS_TOKEN:latest"
+    else
+        echo -e "${YELLOW}Warning: LINE_CHANNEL_SECRET not found; LINE Bot will be disabled${NC}"
+    fi
 
     SET_SECRETS_ARGS=(--set-secrets "${SECRETS}")
 fi

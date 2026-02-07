@@ -23,7 +23,26 @@ func Init() *slog.Logger {
 			switch a.Key {
 			case slog.LevelKey:
 				a.Key = "severity"
-				a.Value = slog.StringValue(levelToSeverity(slog.Level(a.Value.Int64())))
+				var level slog.Level
+
+				switch a.Value.Kind() {
+				case slog.KindInt64:
+					level = slog.Level(a.Value.Int64())
+				case slog.KindAny:
+					switch v := a.Value.Any().(type) {
+					case slog.Level:
+						level = v
+					case slog.Leveler:
+						level = v.Level()
+					case int64:
+						level = slog.Level(v)
+					default:
+						level = slog.LevelInfo
+					}
+				default:
+					level = slog.LevelInfo
+				}
+				a.Value = slog.StringValue(levelToSeverity(level))
 			case slog.MessageKey:
 				a.Key = "message"
 			}
@@ -91,4 +110,3 @@ func levelToSeverity(l slog.Level) string {
 		return "ERROR"
 	}
 }
-

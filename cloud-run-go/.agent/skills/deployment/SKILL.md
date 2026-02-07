@@ -67,10 +67,7 @@ gcloud run deploy homedocmanager-go `
 
 1. **ヘルスチェック**: `GET /health` ("OK" が返ることを確認)
 2. **管理情報取得**: `GET /admin/info` (`Authorization: Bearer [ADMIN_TOKEN]` が必要)
-3. **Watch 開始**: `POST /admin/watch/start` (Google Drive 監視の開始)
-    > [!IMPORTANT]
-    > `DRIVE_WEBHOOK_TOKEN` を有効化または変更した場合、古い Watch（監視設定）はこのトークンを保持していません。そのため、デプロイ後に一度 `/admin/watch/start` を実行して、新しいトークンを含んだ状態で Watch を張り直す必要があります。
-4. **ステータス確認**: `GET /admin/watch/status`
+3. **ステータス確認**: `GET /admin/watch/status` (自動で `active` になっていることを確認)
 
 ## トラブルシューティング
 
