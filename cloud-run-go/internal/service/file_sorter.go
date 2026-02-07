@@ -72,6 +72,12 @@ func (fs *FileSorter) ProcessFile(ctx context.Context, fileID string) model.Proc
 
 	log.Printf("処理開始: %s", fileInfo.Name)
 
+	// 処理済みファイルのチェック（並行処理での重複防止）
+	if fs.driveClient.IsFileProcessed(ctx, fileID) {
+		log.Printf("既に処理済みのファイルです: %s", fileInfo.Name)
+		return model.ProcessResultSkipped
+	}
+
 	// 対応ファイル形式をチェック
 	if !fs.isSupportedMimeType(fileInfo.MimeType) {
 		log.Printf("非対応のファイル形式のためスキップ: %s", fileInfo.MimeType)
@@ -137,6 +143,11 @@ func (fs *FileSorter) ProcessFile(ctx context.Context, fileID string) model.Proc
 	if err := fs.driveClient.MoveFile(ctx, fileID, destinationFolderID); err != nil {
 		log.Printf("ファイル移動失敗: %v", err)
 		return model.ProcessResultError
+	}
+
+	// 処理済みマーカーを設定（並行処理での重複防止）
+	if err := fs.driveClient.MarkFileAsProcessed(ctx, fileID); err != nil {
+		log.Printf("Warning: 処理済みマーカー設定失敗: %v (処理は成功)", err)
 	}
 
 	log.Printf("処理完了: %s → %s", fileInfo.Name, newFileName)
@@ -490,12 +501,12 @@ func (fs *FileSorter) registerCalendarAndTasks(
 		for _, dueDate := range dueDates {
 			task := mergedTasks[dueDate]
 			taskTitle := titlePrefix + " " + task.Title
-			// 重複チェック
-			exists, err := fs.tasksClient.TaskExists(ctx, taskTitle)
+			// タイトル+期日での重複チェック
+			exists, err := fs.tasksClient.TaskExistsByTitleAndDate(ctx, taskTitle, task.DueDate)
 			if err != nil {
 				log.Printf("タスク重複チェック失敗: %v", err)
 			} else if exists {
-				log.Printf("タスクは既に存在します: %s", taskTitle)
+				log.Printf("タスクは既に存在します: %s (期日: %s)", taskTitle, task.DueDate)
 				continue
 			}
 
