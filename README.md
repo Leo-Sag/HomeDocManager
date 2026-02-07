@@ -16,7 +16,8 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 
 - 学校のお便り等から行事予定を抽出し Google Calendar に登録
 - 提出期限等を Google Tasks に登録（同一日のタスクは自動マージ）
-- 重複チェックにより既存の予定・タスクとの二重登録を防止
+- **重複チェック強化**: タイトル+期日の組み合わせで既存タスクとの二重登録を防止
+- **並行処理対応**: 複数インスタンスが同時に処理しても、タスクは1つのみ作成
 
 ### NotebookLM 同期
 
@@ -49,6 +50,7 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 - **Cloud Scheduler 自動運用**:
   - `watch-renew-daily`: 毎週月・木 12:00 JST に Watch を自動更新（7日期限切れ防止）
   - `inbox-trigger-hourly`: 毎時 Inbox フォルダをスキャン（webhook 未検知のファイルを補完処理）
+- **並行処理対応**: Drive Propertiesによるファイル処理済みマーカーで重複処理を防止（複数インスタンス同時起動時も安全）
 - 構造化ログ（`slog` ベース、Cloud Logging 互換 severity / trace 相関）
 
 ## アーキテクチャ
@@ -397,6 +399,16 @@ gcloud scheduler jobs run inbox-trigger-hourly --location=asia-northeast1
 2. Service Account に Secret アクセス権限を付与
 3. 再デプロイ
 4. ログで `LINE Bot Webhook registered at /callback` が出力されることを確認
+
+### Google Tasks にタスクが重複して作成される
+
+**原因**: 複数のCloud Runインスタンスが並行起動し、同じファイルを重複処理している
+
+**解決策**:
+
+- リビジョン 00044 以降では、ファイル処理済みマーカーにより自動的に重複防止
+- ログで「既に処理済みのファイルです」が表示されることを確認
+- 既に作成された重複タスクは手動で削除が必要
 
 ## テスト
 
