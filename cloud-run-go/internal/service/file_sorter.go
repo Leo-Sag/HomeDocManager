@@ -86,10 +86,27 @@ func (fs *FileSorter) ProcessFile(ctx context.Context, fileID string) model.Proc
 	}
 
 	// Geminiで解析 (PDFもそのまま渡す)
-	analysisResult, err := fs.analyzeDocument(ctx, fileBytes, fileInfo.MimeType, fileInfo.Name)
-	if err != nil {
-		log.Printf("Gemini解析失敗: %v", err)
-		return model.ProcessResultError
+	var (
+		analysisResult *model.AnalysisResult
+		combined       *model.DocumentBundle
+	)
+	if config.EnableCombinedGemini {
+		prompt := fs.createAnalysisPrompt(fileInfo.Name)
+		bundle, combinedErr := fs.aiRouter.AnalyzeDocumentFull(ctx, fileBytes, fileInfo.MimeType, fileInfo.Name, prompt)
+		if combinedErr != nil || bundle == nil || bundle.Analysis == nil {
+			log.Printf("統合解析失敗、フォールバックします: %v", combinedErr)
+		} else {
+			combined = bundle
+			analysisResult = bundle.Analysis
+		}
+	}
+
+	if analysisResult == nil {
+		analysisResult, err = fs.analyzeDocument(ctx, fileBytes, fileInfo.MimeType, fileInfo.Name)
+		if err != nil {
+			log.Printf("Gemini解析失敗: %v", err)
+			return model.ProcessResultError
+		}
 	}
 
 	log.Printf("解析結果: category=%s, child=%s, date=%s, summary=%s",
@@ -125,7 +142,7 @@ func (fs *FileSorter) ProcessFile(ctx context.Context, fileID string) model.Proc
 	log.Printf("処理完了: %s → %s", fileInfo.Name, newFileName)
 
 	// 追加アクション
-	fs.performAdditionalActions(ctx, fileBytes, fileInfo.MimeType, newFileName, fileID, analysisResult)
+	fs.performAdditionalActions(ctx, fileBytes, fileInfo.MimeType, newFileName, fileID, analysisResult, combined)
 
 	return model.ProcessResultProcessed
 }
@@ -297,6 +314,7 @@ func (fs *FileSorter) performAdditionalActions(
 	fileName string,
 	fileID string,
 	result *model.AnalysisResult,
+	combined *model.DocumentBundle,
 ) {
 	category := result.Category
 	subCategory := result.SubCategory
@@ -336,12 +354,22 @@ func (fs *FileSorter) performAdditionalActions(
 		(contains([]string{"10_マネー・税務", "30_ライフ・行政"}, category) && result.TargetAdult != ""))
 
 	if shouldRegisterCalendar {
-		fs.registerCalendarAndTasks(ctx, data, mimeType, fileName, fileID, result)
+		var precomputed *model.EventsAndTasks
+		if combined != nil && combined.EventsAndTasks != nil {
+			precomputed = combined.EventsAndTasks
+		}
+		fs.registerCalendarAndTasks(ctx, data, mimeType, fileName, fileID, result, precomputed)
 	}
 
 	// NotebookLM同期
 	log.Printf("NotebookLM同期チェック: category=%s, sync_enabled=%v", category, fs.notebooklmSync != nil)
 	if fs.notebooklmSync != nil && fs.notebooklmSync.ShouldSync(category) {
+		// Avoid re-syncing the same file (saves OCR/Gemini cost).
+		if fs.notebooklmSync.IsAlreadySynced(ctx, fileID) {
+			log.Printf("NotebookLM同期済みのためスキップ: %s (%s)", fileName, fileID)
+			return
+		}
+
 		log.Printf("NotebookLM同期対象確定: %s", category)
 		// Driveカテゴリ → NotebookLMカテゴリに変換
 		notebookCategory, exists := config.NotebookLMCategoryMap[category]
@@ -350,10 +378,17 @@ func (fs *FileSorter) performAdditionalActions(
 		} else {
 			log.Printf("NotebookLM変換後カテゴリ: %s", notebookCategory)
 			// OCRBundleを取得（Geminiで抽出）
-			bundle, err := fs.aiRouter.ExtractOCRBundle(ctx, data, mimeType)
-			if err != nil {
-				log.Printf("OCRBundle抽出失敗: %v", err)
-			} else if bundle.OCRText != "" {
+			var bundle *model.OCRBundle
+			if combined != nil && combined.OCRBundle != nil {
+				bundle = combined.OCRBundle
+			}
+			var ocrErr error
+			if bundle == nil || bundle.OCRText == "" {
+				bundle, ocrErr = fs.aiRouter.ExtractOCRBundle(ctx, data, mimeType)
+			}
+			if ocrErr != nil {
+				log.Printf("OCRBundle抽出失敗: %v", ocrErr)
+			} else if bundle != nil && bundle.OCRText != "" {
 				// 年度を計算
 				fiscalYear := result.FiscalYear
 				if fiscalYear == 0 {
@@ -385,6 +420,7 @@ func (fs *FileSorter) registerCalendarAndTasks(
 	fileName string,
 	fileID string,
 	analysisResult *model.AnalysisResult,
+	precomputed *model.EventsAndTasks,
 ) {
 	if fs.calendarClient == nil && fs.tasksClient == nil {
 		return
@@ -392,10 +428,14 @@ func (fs *FileSorter) registerCalendarAndTasks(
 
 	log.Println("カレンダー・タスク抽出処理開始...")
 
-	eventsAndTasks, err := fs.aiRouter.ExtractEventsAndTasks(ctx, data, mimeType, fileName)
-	if err != nil {
-		log.Printf("カレンダー・タスク情報抽出失敗: %v", err)
-		return
+	eventsAndTasks := precomputed
+	if eventsAndTasks == nil {
+		var err error
+		eventsAndTasks, err = fs.aiRouter.ExtractEventsAndTasks(ctx, data, mimeType, fileName)
+		if err != nil {
+			log.Printf("カレンダー・タスク情報抽出失敗: %v", err)
+			return
+		}
 	}
 
 	// ファイルURL

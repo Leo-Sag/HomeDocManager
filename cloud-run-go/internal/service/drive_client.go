@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/leo-sagawa/homedocmanager/internal/config"
 	"github.com/leo-sagawa/homedocmanager/internal/model"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/docs/v1"
@@ -358,6 +360,9 @@ func (c *DriveClient) StartWatch(ctx context.Context, webhookURL string) (*Watch
 		Type:       "web_hook",
 		Address:    webhookURL,
 		Expiration: expiration,
+	}
+	if token := strings.TrimSpace(config.DriveWebhookToken); token != "" {
+		channel.Token = token
 	}
 
 	watchedChannel, err := c.service.Changes.Watch(startPageToken.StartPageToken, channel).Context(ctx).Do()

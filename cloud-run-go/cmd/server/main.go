@@ -12,11 +12,15 @@ import (
 	"github.com/leo-sagawa/homedocmanager/internal/config"
 	"github.com/leo-sagawa/homedocmanager/internal/handler"
 	"github.com/leo-sagawa/homedocmanager/internal/linebot"
+	"github.com/leo-sagawa/homedocmanager/internal/observability"
 	"github.com/leo-sagawa/homedocmanager/internal/service"
 )
 
 func main() {
 	ctx := context.Background()
+
+	// Structured logging (optional JSON) + access logs + trace correlation.
+	observability.Init()
 
 	// サービスの初期化
 	services, err := initServices(ctx)
@@ -37,26 +41,31 @@ func main() {
 		log.Printf("Warning: Webhook URL not configured, WatchManager disabled")
 	}
 
-	// Ginルーターの設定
-	router := gin.Default()
+	// Ginルーターの設定（デフォルトロガーを構造化ログに置き換え）
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(observability.RequestContextMiddleware())
+	router.Use(observability.AccessLogMiddleware())
 
 	// ハンドラーの初期化
 	pubsubHandler := handler.NewPubSubHandler(services, watchManager)
+	adminAuth := handler.AdminAuthMiddleware()
 
 	// ルートの設定
 	router.POST("/", pubsubHandler.HandlePubSub)
 	router.GET("/health", pubsubHandler.HealthCheck)
-	router.POST("/test", pubsubHandler.TestEndpoint)
-	router.GET("/admin/info", pubsubHandler.AdminInfo)
-	router.POST("/admin/cleanup", pubsubHandler.AdminCleanup)
-	router.POST("/trigger/inbox", pubsubHandler.TriggerInbox)
+	router.POST("/test", adminAuth, pubsubHandler.TestEndpoint)
+	router.GET("/admin/info", adminAuth, pubsubHandler.AdminInfo)
+	router.GET("/admin/ping", adminAuth, pubsubHandler.AdminPing)
+	router.POST("/admin/cleanup", adminAuth, pubsubHandler.AdminCleanup)
+	router.POST("/trigger/inbox", adminAuth, pubsubHandler.TriggerInbox)
 
 	// Drive Watch関連のエンドポイント
 	router.POST("/webhook/drive", pubsubHandler.HandleDriveWebhook)
-	router.POST("/admin/watch/start", pubsubHandler.WatchStart)
-	router.POST("/admin/watch/renew", pubsubHandler.WatchRenew)
-	router.POST("/admin/watch/stop", pubsubHandler.WatchStop)
-	router.GET("/admin/watch/status", pubsubHandler.WatchStatus)
+	router.POST("/admin/watch/start", adminAuth, pubsubHandler.WatchStart)
+	router.POST("/admin/watch/renew", adminAuth, pubsubHandler.WatchRenew)
+	router.POST("/admin/watch/stop", adminAuth, pubsubHandler.WatchStop)
+	router.GET("/admin/watch/status", adminAuth, pubsubHandler.WatchStatus)
 
 	// LINE Bot Webhook
 	if config.LineChannelSecret != "" && config.LineChannelAccessToken != "" {

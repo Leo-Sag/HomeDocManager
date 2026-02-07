@@ -7,6 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 // PDFProcessor はPDF処理を行うサービス
@@ -53,17 +56,23 @@ func (p *PDFProcessor) ConvertPDFToImages(pdfBytes []byte, dpi int) ([][]byte, e
 		return nil, fmt.Errorf("failed to read temp dir: %w", err)
 	}
 
-	var images [][]byte
+	jpgNames := make([]string, 0, len(files))
 	for _, f := range files {
 		if filepath.Ext(f.Name()) == ".jpg" {
-			imgPath := filepath.Join(tmpDir, f.Name())
-			imgData, err := os.ReadFile(imgPath)
-			if err != nil {
-				log.Printf("Warning: failed to read image file %s: %v", imgPath, err)
-				continue
-			}
-			images = append(images, imgData)
+			jpgNames = append(jpgNames, f.Name())
 		}
+	}
+	sortPdftoppmJPGs(jpgNames)
+
+	var images [][]byte
+	for _, name := range jpgNames {
+		imgPath := filepath.Join(tmpDir, name)
+		imgData, err := os.ReadFile(imgPath)
+		if err != nil {
+			log.Printf("Warning: failed to read image file %s: %v", imgPath, err)
+			continue
+		}
+		images = append(images, imgData)
 	}
 
 	if len(images) == 0 {
@@ -72,4 +81,52 @@ func (p *PDFProcessor) ConvertPDFToImages(pdfBytes []byte, dpi int) ([][]byte, e
 
 	log.Printf("PDFを%d枚の画像に変換しました", len(images))
 	return images, nil
+}
+
+func sortPdftoppmJPGs(names []string) {
+	type item struct {
+		name    string
+		page    int
+		hasPage bool
+	}
+
+	items := make([]item, 0, len(names))
+	for _, n := range names {
+		page, ok := parsePdftoppmPageNumber(n)
+		items = append(items, item{name: n, page: page, hasPage: ok})
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		a := items[i]
+		b := items[j]
+		if a.hasPage != b.hasPage {
+			return a.hasPage
+		}
+		if a.hasPage && b.hasPage && a.page != b.page {
+			return a.page < b.page
+		}
+		return a.name < b.name
+	})
+
+	for i := range names {
+		names[i] = items[i].name
+	}
+}
+
+func parsePdftoppmPageNumber(filename string) (int, bool) {
+	// Expected: {prefix}-{page}.jpg, e.g. page-1.jpg, page-10.jpg
+	if !strings.HasSuffix(filename, ".jpg") {
+		return 0, false
+	}
+	base := strings.TrimSuffix(filename, ".jpg")
+	i := strings.LastIndexByte(base, '-')
+	if i < 0 || i == len(base)-1 {
+		return 0, false
+	}
+	pageStr := base[i+1:]
+	n, err := strconv.Atoi(pageStr)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }

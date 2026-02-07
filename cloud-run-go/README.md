@@ -80,6 +80,27 @@ gcloud secrets create OAUTH_REFRESH_TOKEN \
     --data-file=- <<< "your-oauth-refresh-token"
 ```
 
+### 2.1 本番用トークンの準備（推奨）
+
+管理系エンドポイント保護およびDrive Webhook検証用トークンを用意します。
+
+```bash
+# 32バイトのランダムトークンを生成
+openssl rand -hex 32
+```
+
+生成したトークンは以下に設定します：
+
+- `ADMIN_TOKEN`: 管理系エンドポイント用（`/admin/*`, `/test`, `/trigger/inbox`）
+- `DRIVE_WEBHOOK_TOKEN`: Drive Watch通知検証用
+
+### 2.2 Secret Managerにトークンを登録する場合（任意）
+
+```bash
+gcloud secrets create ADMIN_TOKEN --data-file=- <<< "your-admin-token"
+gcloud secrets create DRIVE_WEBHOOK_TOKEN --data-file=- <<< "your-drive-webhook-token"
+```
+
 ### 3. サービスアカウントの設定
 
 ```bash
@@ -109,6 +130,14 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
 # デプロイスクリプトを編集（PROJECT_IDを設定）
 vi deploy.sh
 
+# 本番用トークンと設定（推奨）
+export ADMIN_AUTH_MODE=required
+export ADMIN_TOKEN="your-admin-token"
+export DRIVE_WEBHOOK_TOKEN="your-drive-webhook-token"
+
+# 統合Gemini呼び出しを無効化する場合
+# export ENABLE_COMBINED_GEMINI=false
+
 # デプロイ実行
 ./deploy.sh
 ```
@@ -128,12 +157,31 @@ gcloud run deploy homedocmanager-go \
     --platform managed \
     --region asia-northeast1 \
     --allow-unauthenticated \
-    --memory 256Mi \
+    --memory 384Mi \
     --cpu 1 \
     --timeout 540 \
-    --concurrency 80 \
-    --max-instances 10 \
+    --concurrency 4 \
+    --max-instances 3 \
+    --set-env-vars "GCP_PROJECT_ID=YOUR_PROJECT_ID,GCP_REGION=asia-northeast1,ADMIN_AUTH_MODE=required,ADMIN_TOKEN=your-admin-token,DRIVE_WEBHOOK_TOKEN=your-drive-webhook-token" \
     --service-account homedocmanager-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+Secret Managerを使う場合は `--set-secrets` を推奨します：
+
+```bash
+gcloud run deploy homedocmanager-go \
+  --image gcr.io/YOUR_PROJECT_ID/homedocmanager-go:latest \
+  --platform managed \
+  --region asia-northeast1 \
+  --allow-unauthenticated \
+  --memory 384Mi \
+  --cpu 1 \
+  --timeout 540 \
+  --concurrency 4 \
+  --max-instances 3 \
+  --set-env-vars "GCP_PROJECT_ID=YOUR_PROJECT_ID,GCP_REGION=asia-northeast1,ADMIN_AUTH_MODE=required" \
+  --set-secrets "ADMIN_TOKEN=ADMIN_TOKEN:latest,DRIVE_WEBHOOK_TOKEN=DRIVE_WEBHOOK_TOKEN:latest" \
+  --service-account homedocmanager-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
 ```
 
 ### 6. Pub/Subトリガーの設定
@@ -164,6 +212,7 @@ Pub/Subトリガーのメインエンドポイント
 
 ```bash
 curl -X POST https://YOUR_CLOUD_RUN_URL/test \
+  -H "Authorization: Bearer your-admin-token" \
   -H "Content-Type: application/json" \
   -d '{"file_id": "YOUR_FILE_ID"}'
 ```
@@ -171,11 +220,23 @@ curl -X POST https://YOUR_CLOUD_RUN_URL/test \
 ### GET /admin/info
 ストレージ情報の取得
 
+### GET /admin/ping
+管理系認証の疎通確認（副作用なし）
+
 ### POST /admin/cleanup
 サービスアカウントのストレージクリーンアップ
 
 ### POST /trigger/inbox
 Inboxフォルダ内の全ファイルを一括処理
+
+### Drive Webhook の検証
+
+Drive Watch通知は以下のトークンが一致する場合のみ受理されます。
+
+- `DRIVE_WEBHOOK_TOKEN` が設定されている場合のみ検証
+- Watch作成時に同じトークンが `channel.Token` として送信されます
+
+トークンが不一致の場合、`403` を返します。
 
 ## ローカル開発
 
@@ -199,6 +260,11 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
     --limit 50 \
     --format json
 ```
+
+ログ形式は環境変数で切り替えできます：
+
+- `LOG_FORMAT=json` でJSON（構造化）ログ
+- `LOG_LEVEL=debug|info|warn|error`
 
 ## トラブルシューティング
 
@@ -230,16 +296,25 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 
 ## 今後の実装予定
 
-以下の機能は現在スタブ実装となっており、今後実装予定です：
+以下は現状に合わせて更新しました（「スタブ/未実装」ではなく、実装済みまたは改善余地ありの項目です）：
 
-- [ ] Google Photos APIの完全実装
-- [ ] Google Calendar APIの完全実装
-- [ ] Google Tasks APIの完全実装
-- [ ] NotebookLM同期機能の完全実装
-- [ ] PDF処理の高度化（ページレンダリング）
-- [ ] 構造化ログ（JSON形式）
-- [ ] 分散トレーシング（OpenTelemetry）
-- [ ] ユニットテスト・統合テスト
+- [x] Google Photos API（画像アップロード、PDFはページレンダリングして複数ページアップロード）
+- [x] Google Calendar API（イベント作成、重複チェック）
+- [x] Google Tasks API（タスク作成、重複チェック）
+- [x] NotebookLM同期（年度×カテゴリの累積Docに追記、同期済みマーカーで重複同期を抑止）
+- [x] PDF処理（`pdftoppm` によるページレンダリング、ページ順は数値ソートで安定化）
+- [x] 構造化ログ（`LOG_FORMAT=json` でJSONログ、HTTPアクセスログは構造化）
+- [~] 分散トレーシング（OpenTelemetry）
+- [x] ユニットテスト（認証/トークン期限/PDFページ順などの基本テスト）
+
+OpenTelemetry は現状「トレースID抽出（Cloud Run `X-Cloud-Trace-Context` / W3C `traceparent`）とログ相関」まで実装しています。
+Collector/Exporter を含むフル構成は、運用先の要件（OTLP, Cloud Trace 等）に合わせて追加する想定です。
+
+## Rollout Walkthrough
+
+本番反映とロールバック（Cloud RunのRevision運用）を含む手順書は以下にまとめています：
+
+- `WALKTHROUGH.md`
 
 ## ライセンス
 

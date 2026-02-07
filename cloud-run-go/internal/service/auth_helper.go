@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
@@ -19,33 +20,32 @@ import (
 
 // OAuthCredentials はOAuth認証情報を保持
 type OAuthCredentials struct {
-	AccessToken  string
-	RefreshToken string
-	ClientID     string
-	ClientSecret string
+	AccessToken          string
+	AccessTokenExpiresAt time.Time
+	RefreshToken         string
+	ClientID             string
+	ClientSecret         string
 }
 
 var (
-	oauthCreds     *OAuthCredentials
-	oauthCredsOnce sync.Once
-	oauthCredsMu   sync.Mutex
+	oauthCreds   *OAuthCredentials
+	oauthCredsMu sync.Mutex
 )
 
 // GetOAuthCredentials はOAuth認証情報を取得（シングルトン）
 func GetOAuthCredentials(ctx context.Context) (*OAuthCredentials, error) {
-	var initErr error
-	oauthCredsOnce.Do(func() {
-		creds, err := loadOAuthCredentials(ctx)
-		if err != nil {
-			initErr = err
-			return
-		}
-		oauthCreds = creds
-	})
+	oauthCredsMu.Lock()
+	defer oauthCredsMu.Unlock()
 
-	if initErr != nil {
-		return nil, initErr
+	if oauthCreds != nil {
+		return oauthCreds, nil
 	}
+
+	creds, err := loadOAuthCredentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	oauthCreds = creds
 	return oauthCreds, nil
 }
 
@@ -54,8 +54,8 @@ func (c *OAuthCredentials) GetAccessToken(ctx context.Context) (string, error) {
 	oauthCredsMu.Lock()
 	defer oauthCredsMu.Unlock()
 
-	// TODO: トークン有効期限チェック（現状は毎回リフレッシュ）
-	if c.AccessToken == "" {
+	// 期限切れ（または未取得）の場合のみ更新
+	if c.AccessToken == "" || tokenExpiredSoon(c.AccessTokenExpiresAt) {
 		if err := c.refreshToken(ctx); err != nil {
 			return "", err
 		}
@@ -102,9 +102,23 @@ func (c *OAuthCredentials) refreshToken(ctx context.Context) error {
 	}
 
 	c.AccessToken = tokenResp.AccessToken
+	if tokenResp.ExpiresIn > 0 {
+		c.AccessTokenExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	} else {
+		// フォールバック: 30分後を期限とみなす
+		c.AccessTokenExpiresAt = time.Now().Add(30 * time.Minute)
+	}
 	log.Println("OAuth アクセストークンをリフレッシュしました")
 
 	return nil
+}
+
+func tokenExpiredSoon(expiresAt time.Time) bool {
+	if expiresAt.IsZero() {
+		return true
+	}
+	// 余裕を見て1分前で更新
+	return time.Now().After(expiresAt.Add(-1 * time.Minute))
 }
 
 // loadOAuthCredentials はSecret Managerや環境変数から認証情報を読み込み

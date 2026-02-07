@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 )
 
 // GCP設定
@@ -13,6 +14,14 @@ var (
 	LineChannelSecret      = os.Getenv("LINE_CHANNEL_SECRET")
 	LineChannelAccessToken = os.Getenv("LINE_CHANNEL_ACCESS_TOKEN")
 	LineBotSettingsPath    = GetEnv("LINE_BOT_SETTINGS_PATH", "resources/linebot/line_settings.json")
+
+	// 管理系エンドポイントの認証設定
+	// required | optional | disabled
+	AdminAuthMode = GetEnv("ADMIN_AUTH_MODE", "required")
+	AdminToken    = os.Getenv("ADMIN_TOKEN")
+
+	// Drive webhook検証用トークン（設定されていれば検証する）
+	DriveWebhookToken = os.Getenv("DRIVE_WEBHOOK_TOKEN")
 )
 
 // Secret Manager設定
@@ -46,6 +55,9 @@ var AIRouter = AIRouterConfig{
 	MaxFlashRetries:     2,
 	EnableProEscalation: true,
 }
+
+// Gemini統合呼び出しの有効化
+var EnableCombinedGemini = GetEnvBool("ENABLE_COMBINED_GEMINI", true)
 
 // Google Driveフォルダ設定
 var FolderIDs = map[string]string{
@@ -277,4 +289,20 @@ func GetEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// GetEnvBool は環境変数をboolとして取得する
+func GetEnvBool(key string, defaultValue bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return defaultValue
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	case "0", "false", "f", "no", "n", "off":
+		return false
+	default:
+		return defaultValue
+	}
 }
