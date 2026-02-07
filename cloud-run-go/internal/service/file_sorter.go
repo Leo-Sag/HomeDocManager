@@ -362,8 +362,8 @@ func (fs *FileSorter) performAdditionalActions(
 	}
 
 	// NotebookLM同期
-	log.Printf("NotebookLM同期チェック: category=%s, sync_enabled=%v", category, fs.notebooklmSync != nil)
-	if fs.notebooklmSync != nil && fs.notebooklmSync.ShouldSync(category) {
+	log.Printf("NotebookLM同期チェック: category=%s, subCategory=%s, sync_enabled=%v", category, subCategory, fs.notebooklmSync != nil)
+	if fs.notebooklmSync != nil && fs.notebooklmSync.ShouldSync(category, subCategory) {
 		// Avoid re-syncing the same file (saves OCR/Gemini cost).
 		if fs.notebooklmSync.IsAlreadySynced(ctx, fileID) {
 			log.Printf("NotebookLM同期済みのためスキップ: %s (%s)", fileName, fileID)
