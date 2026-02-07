@@ -37,6 +37,13 @@ func main() {
 	if webhookURL != "" {
 		watchManager = service.NewWatchManager(services.DriveClient, services.FileSorter, webhookURL)
 		log.Printf("WatchManager initialized")
+
+		// 起動時に自動でWatch開始（インスタンス再起動時にも監視を復旧）
+		if err := watchManager.StartWatch(ctx); err != nil {
+			log.Printf("Warning: Auto-start watch failed: %v", err)
+		} else {
+			log.Printf("Watch auto-started on boot")
+		}
 	} else {
 		log.Printf("Warning: Webhook URL not configured, WatchManager disabled")
 	}

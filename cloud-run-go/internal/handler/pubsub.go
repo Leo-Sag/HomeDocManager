@@ -198,10 +198,9 @@ func (h *PubSubHandler) HandleDriveWebhook(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "invalid webhook token"})
 			return
 		}
-	}
-
-	// Watch情報と照合（可能な場合のみ）
-	if h.watchManager != nil {
+		// トークン検証に成功 → 正当なWatch通知として処理を続行
+	} else if h.watchManager != nil {
+		// トークン未設定の場合のみ、Watch情報で照合（フォールバック検証）
 		if ok, reason := h.watchManager.ValidateNotification(channelID, resourceID); !ok {
 			log.Printf("Drive webhook validation failed: %s (channelID=%s)", reason, channelID)
 			c.JSON(http.StatusForbidden, gin.H{"error": "invalid webhook"})
