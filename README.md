@@ -39,6 +39,10 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 
 - 管理系エンドポイントはトークン認証で保護（`ADMIN_TOKEN`）
 - Drive Watch webhook のトークン検証（`DRIVE_WEBHOOK_TOKEN`）
+- **起動時 Watch 自動開始**: インスタンス起動時に自動的に Drive Watch を開始（コールドスタート復旧）
+- **Cloud Scheduler 自動運用**:
+  - `watch-renew-daily`: 毎週月・木 12:00 JST に Watch を自動更新（7日期限切れ防止）
+  - `inbox-trigger-hourly`: 毎時 Inbox フォルダをスキャン（webhook 未検知のファイルを補完処理）
 - 構造化ログ（`slog` ベース、Cloud Logging 互換 severity / trace 相関）
 
 ## アーキテクチャ
@@ -186,8 +190,24 @@ HomeDocManager/
 | CPU | 1 |
 | 同時実行数 | 4 |
 | 最大インスタンス | 3 |
+| 最小インスタンス | 0（スケール to ゼロ） |
 | タイムアウト | 540s |
 | リージョン | asia-northeast1 |
+
+## Cloud Scheduler 自動運用
+
+| ジョブ名 | スケジュール | エンドポイント | 目的 |
+| --------- | ------------- | -------------- | ------ |
+| `watch-renew-daily` | 毎週月・木 12:00 JST | `/admin/watch/renew` | Drive Watch を定期更新（7日期限切れ防止） |
+| `inbox-trigger-hourly` | 毎時 0分 UTC | `/trigger/inbox` | Inbox フォルダの定期スキャン（webhook 漏れ対策） |
+
+**認証**: 両ジョブとも `ADMIN_TOKEN` をヘッダー認証で使用（OIDC ではない）
+
+**冗長性**:
+
+- インスタンス起動時に自動で Watch 開始 → 7日以内の再起動で自動復旧
+- Scheduler による定期更新 → 長期稼働時も Watch が切れない
+- 毎時 Inbox スキャン → webhook 未検知のファイルも確実に処理
 
 ## セットアップ
 
