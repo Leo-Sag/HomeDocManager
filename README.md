@@ -1,84 +1,257 @@
-# HomeDocManager (Smart Document Filing System) v1.5.0
+# HomeDocManager
 
-Gemini AIを活用して、Googleドライブ上のドキュメント（PDF/画像）を自動で解析・リネーム・分別するシステムです。
-Go言語によるリファクタリングにより、高速かつ堅牢な処理を実現しました。
+Google Drive 上の家庭内書類（PDF・画像）を Gemini AI で自動解析し、カテゴリ分類・リネーム・フォルダ振り分けを行う Cloud Run マイクロサービスです。
+Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot によるドキュメント検索（RAG）にも対応しています。
 
-## 主な機能
+## 機能一覧
 
-### 1. インテリジェントなファイル自動仕分け
+### ファイル自動仕分け
 
-- **自動解析**: Gemini 1.5 Flash/Pro (v1beta) を使用し、内容を詳細に解析。
-- **リネーム・移動**: 解析結果に基づき、適切なファイル名に変更し、年度・カテゴリ別のフォルダへ自動移動。
-- **Inbox限定処理**: `00_Inbox` フォルダに入った新規ファイルのみを処理対象とし、意図しない再移動（無限ループ）を防止。
+- Inbox（`00_Inbox`）フォルダに入ったファイルを検知し、Gemini Flash/Pro で内容を解析
+- 解析結果に基づき `YYYYMMDD_要約.ext` 形式にリネームし、カテゴリ別・年度別フォルダへ自動移動
+- 子供の名前・学年・クラス名を OCR から自動特定し、子供ごとのサブフォルダに振り分け
+- 統合 Gemini 呼び出し（`ENABLE_COMBINED_GEMINI`）により、分類・予定抽出・OCR を 1 回の API 呼び出しで実行可能
 
-### 2. カレンダー・タスク連携
+### カレンダー・タスク連携
 
-- **行事抽出**: プリント等の内容から日付・行事名を抽出し、Google カレンダーへ登録。
-- **タスク登録**: 提出期限などを抽出し、Google Tasks へ登録。
-- **タスクマージ**: 同一日の同じ内容のタスクを自動的に 1 つにマージして登録（ granular な登録を防止）。
-- **児童特定優先ロジック**: 複数児童が含まれるフォルダでも、OCR 結果（学年等）から最適な児童を自動特定。
+- 学校のお便り等から行事予定を抽出し Google Calendar に登録
+- 提出期限等を Google Tasks に登録（同一日のタスクは自動マージ）
+- 重複チェックにより既存の予定・タスクとの二重登録を防止
 
-### 3. NotebookLM 同期機能 (ENHANCED)
+### NotebookLM 同期
 
-- **カテゴリ別分割同期**: 以下の 6 つのカテゴリ別に Google Docs (統合ドキュメント) を自動作成・追記します。
-  - `life` (30_ライフ・行政)
-  - `money` (10_マネー・税務)
-  - `children` (40_子供・教育)
-  - `medical` (60_ヘルス・医療)
-  - `library` (90_ライブラリ)
-  - `assets` (20_プロジェクト・資産)
-- **OCRBundle 導入**: プレーンなテキストだけでなく、重要な事実(Facts)や要約(Summary)を構造化データとして抽出・蓄積。
-- **重複防止**: Mutex による排他制御と `EndOfSegmentLocation` を使用した安定した追記処理。
-- **共有ドライブ対応**: 共有ドライブ上のドキュメントも同期対象としてサポート。
+- 処理済みドキュメントの OCR テキスト・事実・要約を年度別・カテゴリ別の Google Docs に追記
+- 対象カテゴリ: マネー・税務 / プロジェクト・資産 / ライフ・行政 / 子供・教育 / ヘルス・医療 / ライブラリ
+- ファイルプロパティによる同期済みマーカーで重複同期を防止
 
-### 4. 写真・画像管理
+### Google Photos 連携
 
-- **Google フォト同期**: 領収書や写真画像を Google フォトへ自動アップロード。
-- **高画質変換**: PDFから画像への変換時、Google フォト用には **300 DPI** を使用し、鮮明な画質で保存。
-- **トークン最適化**: Gemini解析用には、PDFをネイティブ形式（または200 DPI）で処理することで、APIのトークン消費を抑制。
+- 写真カテゴリおよび子供の記録・作品カテゴリのファイルを Google Photos に自動アップロード
+- PDF は 300 DPI で画像変換してアップロード（ページ順は数値ソートで安定化）
 
-### 5. 管理・運用ツール
+### LINE Bot（RAG 対応）
 
-- **ヘルスチェック**: `/health` エンドポイントによる動作確認。
-- **インボックス強制スキャン**: `/trigger/inbox` により、Inbox 内のファイルを一括手動処理。
-- **ストレージ容量解決**: ユーザーの OAuth トークンを使用することで、サービスアカウントの容量制限を回避。
+- 蓄積ドキュメントに対する自然言語 Q&A（RAG）
+- 回答のソース元 Google Drive URL を自動提示
+- カテゴリ別ナビゲーション（Flex Message）・クイックリプライ対応
 
-### 6. LINE Bot インターフェース (RAG Supported)
+### 管理・運用
 
-- **AIチャット検索 (RAG)**: 蓄積されたドキュメントの内容について、自然言語で質問可能。Gemini が文脈を理解し、的確な回答を生成します。
-- **ソース元の明示**: 回答の根拠となったドキュメントの Google Drive URL を自動的に提示。
-- **カテゴリ別ナビゲーション**: リッチメニューから「お金」「生活」などのカテゴリを選択すると、AIが具体的な質問の仕方をガイドする対話的ヘルプを表示。
-- **クイックリプライ**: スムーズなカテゴリ切り替えとインタラクションを実現。
+- 管理系エンドポイントはトークン認証で保護（`ADMIN_TOKEN`）
+- Drive Watch webhook のトークン検証（`DRIVE_WEBHOOK_TOKEN`）
+- 構造化ログ（`slog` ベース、Cloud Logging 互換 severity / trace 相関）
 
-## システム構成
+## アーキテクチャ
 
-- **言語**: Go 1.24
-- **プラットフォーム**: Google Cloud Run
-- **インフラ**: Google Pub/Sub (Drive変更通知), Secret Manager (認証情報管理)
+```
+Google Drive (Inbox)
+    |
+    +-- Pub/Sub push ----> POST /
+    +-- Drive Watch -----> POST /webhook/drive
+                              |
+                      +-------v--------+
+                      |  Cloud Run     |
+                      |  (Go / Gin)    |
+                      |                |
+                      |  FileSorter    |
+                      |   +- AIRouter  |--> Gemini Flash / Pro
+                      |   +- Drive     |--> Google Drive API
+                      |   +- Photos    |--> Google Photos API
+                      |   +- Calendar  |--> Google Calendar API
+                      |   +- Tasks     |--> Google Tasks API
+                      |   +- Notebook  |--> Google Docs API
+                      |                |
+                      |  LINE Bot      |
+                      |   +- RAG      -|--> Gemini (RAG)
+                      +----------------+
+```
 
 ## ディレクトリ構造
 
-```text
-HomeDocManager/
-├── cloud-run-go/           # Goアプリケーション本体 (v1.5.0 Current)
-│   ├── cmd/                # エントリポイント (server)
-│   ├── internal/           # 内部ロジック (service, handler, config, model, linebot)
-│   ├── resources/          # リソースファイル (linebot テンプレ等)
-│   ├── tools/              # 運用ツール (setup_oauth, etc.)
-│   └── Dockerfile          # コンテナ定義
-├── _archive/               # 過去の遺産コード (GAS, Python版)
-├── README.md               # 本ファイル
-└── ...
 ```
+HomeDocManager/
++-- cloud-run-go/                  # アプリケーション本体
+|   +-- cmd/server/main.go         # エントリポイント
+|   +-- internal/
+|   |   +-- config/settings.go     # 設定定数・環境変数
+|   |   +-- handler/
+|   |   |   +-- pubsub.go          # HTTP ハンドラー
+|   |   |   +-- admin_auth.go      # 管理認証ミドルウェア
+|   |   +-- service/
+|   |   |   +-- ai_router.go       # Gemini Flash/Pro ルーティング
+|   |   |   +-- file_sorter.go     # ファイル仕分けオーケストレータ
+|   |   |   +-- drive_client.go    # Google Drive API クライアント
+|   |   |   +-- photos_client.go   # Google Photos API クライアント
+|   |   |   +-- calendar_client.go # Google Calendar API クライアント
+|   |   |   +-- tasks_client.go    # Google Tasks API クライアント
+|   |   |   +-- notebooklm_sync.go # NotebookLM 同期
+|   |   |   +-- pdf_processor.go   # PDF -> 画像変換 (poppler)
+|   |   |   +-- watch_manager.go   # Drive Watch 管理
+|   |   |   +-- grade_manager.go   # 学年・クラス管理
+|   |   |   +-- auth_helper.go     # OAuth 認証ヘルパー
+|   |   |   +-- services.go        # サービスコンテナ
+|   |   +-- linebot/
+|   |   |   +-- handler.go         # LINE webhook ハンドラー
+|   |   |   +-- service.go         # Flex Message テンプレート
+|   |   |   +-- rag_service.go     # RAG 検索
+|   |   +-- model/types.go         # データ型定義
+|   |   +-- observability/
+|   |       +-- init.go            # 構造化ログ初期化
+|   |       +-- gin.go             # アクセスログ・リクエスト ID
+|   |       +-- trace.go           # Cloud Trace 相関
+|   +-- resources/linebot/         # LINE Bot テンプレート JSON
+|   +-- tools/                     # セットアップツール
+|   +-- Dockerfile                 # マルチステージビルド
+|   +-- deploy.sh                  # ローカル Docker ビルド + デプロイ
+|   +-- deploy-cloudbuild.sh       # Cloud Build デプロイ
+|   +-- WALKTHROUGH.md             # 本番反映手順書
+|   +-- go.mod
+|   +-- go.sum
++-- _archive/                      # 旧実装 (Python / GAS)
++-- README.md                      # 本ファイル
+```
+
+## 技術スタック
+
+| 項目 | 技術 |
+|------|------|
+| 言語 | Go 1.24 |
+| Web フレームワーク | Gin |
+| AI | Gemini 3 Flash / Pro (google/generative-ai-go) |
+| Google APIs | Drive v3, Docs v1, Calendar v3, Tasks v1, Photos (OAuth REST) |
+| 認証 | OAuth 2.0 + Service Account フォールバック |
+| シークレット管理 | Google Secret Manager |
+| メッセージング | LINE Bot SDK v7 |
+| コンテナ | Docker (マルチステージ Alpine) |
+| PDF 処理 | poppler-utils (pdftoppm) |
+| ログ | log/slog (Cloud Logging 互換 JSON) |
+
+## API エンドポイント
+
+| メソッド | パス | 認証 | 説明 |
+|---------|------|------|------|
+| `POST` | `/` | なし | Pub/Sub push トリガー |
+| `GET` | `/health` | なし | ヘルスチェック |
+| `POST` | `/webhook/drive` | webhook token | Drive Watch コールバック |
+| `POST` | `/callback` | LINE 署名検証 | LINE Bot webhook |
+| `POST` | `/test` | ADMIN_TOKEN | 手動ファイル処理テスト |
+| `GET` | `/admin/ping` | ADMIN_TOKEN | 認証確認用 |
+| `GET` | `/admin/info` | ADMIN_TOKEN | ストレージ情報取得 |
+| `POST` | `/admin/cleanup` | ADMIN_TOKEN | SA ストレージクリーンアップ |
+| `POST` | `/trigger/inbox` | ADMIN_TOKEN | Inbox 一括処理 |
+| `POST` | `/admin/watch/start` | ADMIN_TOKEN | Drive Watch 開始 |
+| `POST` | `/admin/watch/renew` | ADMIN_TOKEN | Drive Watch 更新 |
+| `POST` | `/admin/watch/stop` | ADMIN_TOKEN | Drive Watch 停止 |
+| `GET` | `/admin/watch/status` | ADMIN_TOKEN | Drive Watch 状態確認 |
+
+## 環境変数
+
+### 必須
+
+| 変数 | 説明 |
+|------|------|
+| `GCP_PROJECT_ID` | GCP プロジェクト ID |
+| `GCP_REGION` | Cloud Run リージョン (デフォルト: `asia-northeast1`) |
+| `GCP_PROJECT_NUMBER` | プロジェクト番号 (webhook URL 組み立てに使用) |
+| `OAUTH_CLIENT_ID` | OAuth 2.0 クライアント ID |
+| `OAUTH_CLIENT_SECRET` | OAuth 2.0 クライアントシークレット |
+
+### シークレット (Secret Manager または環境変数)
+
+| 変数 | 説明 |
+|------|------|
+| `GEMINI_API_KEY` | Gemini API キー |
+| `OAUTH_REFRESH_TOKEN` | OAuth リフレッシュトークン (Drive / Photos / Calendar / Tasks) |
+| `ADMIN_TOKEN` | 管理エンドポイント認証トークン |
+| `DRIVE_WEBHOOK_TOKEN` | Drive Watch webhook 検証トークン |
+
+### オプション
+
+| 変数 | デフォルト | 説明 |
+|------|-----------|------|
+| `ADMIN_AUTH_MODE` | `required` | 管理認証モード (`required` / `optional` / `disabled`) |
+| `ENABLE_COMBINED_GEMINI` | `true` | 統合 Gemini 呼び出しの有効化 |
+| `LOG_FORMAT` | `text` | ログ形式 (`json` で Cloud Logging 互換 JSON) |
+| `LOG_LEVEL` | `info` | ログレベル (`debug` / `info` / `warn` / `error`) |
+| `WEBHOOK_URL` | 自動生成 | Drive Watch webhook URL の明示指定 |
+| `LINE_CHANNEL_SECRET` | - | LINE Bot チャンネルシークレット |
+| `LINE_CHANNEL_ACCESS_TOKEN` | - | LINE Bot チャンネルアクセストークン |
+| `PORT` | `8080` | サーバーポート |
+
+## Cloud Run デプロイ設定
+
+| 項目 | 値 |
+|------|-----|
+| メモリ | 384Mi |
+| CPU | 1 |
+| 同時実行数 | 4 |
+| 最大インスタンス | 3 |
+| タイムアウト | 540s |
+| リージョン | asia-northeast1 |
 
 ## セットアップ
 
-1. **認証設定**:
-   - `cloud-run-go/internal/service/auth_helper.go` を通じて Google API の認証を行います。
-   - 取得したリフレッシュトークンを Secret Manager の `OAUTH_REFRESH_TOKEN` に設定します。
+### 1. OAuth 認証情報の取得
 
-2. **デプロイ**:
-   - `gcloud run deploy` コマンドを使用して Cloud Run にデプロイします。
+```bash
+cd cloud-run-go
+go run tools/setup_oauth.go
+```
+
+取得したリフレッシュトークンを Secret Manager に登録します。
+
+### 2. Secret Manager 登録
+
+```bash
+ADMIN_TOKEN="$(openssl rand -hex 32)"
+DRIVE_WEBHOOK_TOKEN="$(openssl rand -hex 32)"
+
+echo -n "$ADMIN_TOKEN" | gcloud secrets versions add ADMIN_TOKEN --data-file=-
+echo -n "$DRIVE_WEBHOOK_TOKEN" | gcloud secrets versions add DRIVE_WEBHOOK_TOKEN --data-file=-
+echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets versions add GEMINI_API_KEY --data-file=-
+echo -n "YOUR_REFRESH_TOKEN" | gcloud secrets versions add OAUTH_REFRESH_TOKEN --data-file=-
+```
+
+### 3. デプロイ
+
+**ローカル Docker ビルド:**
+
+```bash
+cd cloud-run-go
+export USE_SECRET_MANAGER=1
+export ADMIN_AUTH_MODE=required
+export LOG_FORMAT=json
+./deploy.sh
+```
+
+**Cloud Build (Docker 不要):**
+
+```bash
+cd cloud-run-go
+./deploy-cloudbuild.sh
+```
+
+詳細な手順は [WALKTHROUGH.md](cloud-run-go/WALKTHROUGH.md) を参照してください。
+
+### 4. デプロイ後の確認
+
+```bash
+SERVICE_URL="$(gcloud run services describe homedocmanager-go \
+  --region asia-northeast1 --format='value(status.url)')"
+
+# ヘルスチェック
+curl -sS "$SERVICE_URL/health"
+
+# 管理認証の確認
+curl -i "$SERVICE_URL/admin/ping" -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+## テスト
+
+```bash
+cd cloud-run-go
+go test ./...
+```
 
 ## ライセンス
 
