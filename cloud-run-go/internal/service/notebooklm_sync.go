@@ -283,6 +283,7 @@ func (ns *NotebookLMSync) markAsSynced(ctx context.Context, fileID string) {
 	}
 
 	_, err := ns.driveClient.service.Files.Update(fileID, file).
+		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -294,6 +295,7 @@ func (ns *NotebookLMSync) markAsSynced(ctx context.Context, fileID string) {
 func (ns *NotebookLMSync) IsAlreadySynced(ctx context.Context, fileID string) bool {
 	file, err := ns.driveClient.service.Files.Get(fileID).
 		Fields("properties").
+		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
 	if err != nil {

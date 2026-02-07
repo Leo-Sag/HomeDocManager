@@ -142,3 +142,21 @@ func (wm *WatchManager) GetStatus() map[string]interface{} {
 
 	return status
 }
+
+// ValidateNotification validates channel/resource IDs if a watch is active.
+// Returns true if validation passes or cannot be performed.
+func (wm *WatchManager) ValidateNotification(channelID, resourceID string) (bool, string) {
+	wm.mu.RLock()
+	defer wm.mu.RUnlock()
+
+	if wm.currentWatch == nil {
+		return true, "no active watch"
+	}
+	if channelID != "" && channelID != wm.currentWatch.ChannelID {
+		return false, "channel_id mismatch"
+	}
+	if resourceID != "" && wm.currentWatch.ResourceID != "" && resourceID != wm.currentWatch.ResourceID {
+		return false, "resource_id mismatch"
+	}
+	return true, ""
+}

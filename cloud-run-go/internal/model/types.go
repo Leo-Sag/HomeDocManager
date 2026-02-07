@@ -89,3 +89,11 @@ type OCRBundle struct {
 		Notes          string `json:"notes"`
 	} `json:"quality"`
 }
+
+// DocumentBundle は統合解析結果
+type DocumentBundle struct {
+	Analysis       *AnalysisResult  `json:"analysis"`
+	EventsAndTasks *EventsAndTasks  `json:"events_and_tasks"`
+	OCRBundle      *OCRBundle       `json:"ocr_bundle"`
+	Warnings       []string         `json:"warnings,omitempty"`
+}
