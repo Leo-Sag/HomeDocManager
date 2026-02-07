@@ -442,3 +442,40 @@ func (c *DriveClient) GetChanges(ctx context.Context, pageToken string) ([]strin
 
 	return fileIDs, nextPageToken, nil
 }
+
+// ファイル処理済みマーカー
+const fileProcessedMarker = "file_processed"
+
+// IsFileProcessed はファイルが既に処理済みかチェック
+func (c *DriveClient) IsFileProcessed(ctx context.Context, fileID string) bool {
+	file, err := c.service.Files.Get(fileID).
+		Fields("properties").
+		SupportsAllDrives(true).
+		Context(ctx).
+		Do()
+	if err != nil {
+		log.Printf("処理済みチェックエラー: %v", err)
+		return false
+	}
+
+	return file.Properties != nil && file.Properties[fileProcessedMarker] == "true"
+}
+
+// MarkFileAsProcessed はファイルを処理済みとしてマーク
+func (c *DriveClient) MarkFileAsProcessed(ctx context.Context, fileID string) error {
+	file := &drive.File{
+		Properties: map[string]string{
+			fileProcessedMarker: "true",
+		},
+	}
+
+	_, err := c.service.Files.Update(fileID, file).
+		SupportsAllDrives(true).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return fmt.Errorf("処理済みマーキングエラー: %w", err)
+	}
+
+	return nil
+}

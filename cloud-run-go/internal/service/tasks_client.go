@@ -149,3 +149,64 @@ func (tc *TasksClient) TaskExists(ctx context.Context, title string) (bool, erro
 
 	return false, nil
 }
+
+// TaskExistsByTitleAndDate はタイトルと期日の組み合わせで重複チェック
+func (tc *TasksClient) TaskExistsByTitleAndDate(ctx context.Context, title, dueDate string) (bool, error) {
+	accessToken, err := tc.oauthCreds.GetAccessToken(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get access token: %w", err)
+	}
+
+	// 未完了タスクのみ取得
+	url := "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false"
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("tasks API error: %s - %s", resp.Status, string(body))
+	}
+
+	var result struct {
+		Items []struct {
+			Title string `json:"title"`
+			Due   string `json:"due"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, err
+	}
+
+	// タイトルと期日の両方が一致するタスクを探す
+	for _, item := range result.Items {
+		if item.Title == title {
+			// 期日が指定されていない場合はタイトルのみでマッチ
+			if dueDate == "" {
+				return true, nil
+			}
+			// 期日が指定されている場合は両方が一致する必要がある
+			if item.Due != "" {
+				// RFC3339形式から日付部分のみ抽出して比較
+				itemDate := item.Due[:10] // "YYYY-MM-DD"
+				checkDate := dueDate
+				if len(dueDate) == 8 { // YYYYMMDD形式
+					checkDate = fmt.Sprintf("%s-%s-%s", dueDate[:4], dueDate[4:6], dueDate[6:8])
+				}
+				if itemDate == checkDate {
+					return true, nil
+				}
+			}
+		}
+	}
+
+	return false, nil
+}
