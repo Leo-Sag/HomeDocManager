@@ -135,6 +135,11 @@ func (h *PubSubHandler) AdminCleanup(c *gin.Context) {
 	})
 }
 
+// AdminPing is a lightweight admin-auth protected endpoint for verification.
+func (h *PubSubHandler) AdminPing(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "OK"})
+}
+
 // TriggerInbox はInboxフォルダ内の全ファイルを処理
 func (h *PubSubHandler) TriggerInbox(c *gin.Context) {
 	inboxID := config.FolderIDs["SOURCE"]
@@ -182,9 +187,29 @@ func (h *PubSubHandler) TriggerInbox(c *gin.Context) {
 func (h *PubSubHandler) HandleDriveWebhook(c *gin.Context) {
 	// Drive APIからの通知ヘッダーを確認
 	channelID := c.GetHeader("X-Goog-Channel-ID")
+	resourceID := c.GetHeader("X-Goog-Resource-ID")
+	channelToken := c.GetHeader("X-Goog-Channel-Token")
 	resourceState := c.GetHeader("X-Goog-Resource-State")
 
-	log.Printf("Drive webhook received: channelID=%s, state=%s", channelID, resourceState)
+	// トークン検証（設定されている場合のみ）
+	if config.DriveWebhookToken != "" {
+		if channelToken == "" || channelToken != config.DriveWebhookToken {
+			log.Printf("Drive webhook token mismatch: channelID=%s", channelID)
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid webhook token"})
+			return
+		}
+	}
+
+	// Watch情報と照合（可能な場合のみ）
+	if h.watchManager != nil {
+		if ok, reason := h.watchManager.ValidateNotification(channelID, resourceID); !ok {
+			log.Printf("Drive webhook validation failed: %s (channelID=%s)", reason, channelID)
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid webhook"})
+			return
+		}
+	}
+
+	log.Printf("Drive webhook received: channelID=%s, resourceID=%s, state=%s", channelID, resourceID, resourceState)
 
 	// syncは初期確認なのでスキップ
 	if resourceState == "sync" {

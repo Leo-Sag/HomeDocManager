@@ -106,6 +106,25 @@ func (r *AIRouter) AnalyzeDocument(ctx context.Context, data []byte, mimeType st
 	return r.callGemini(ctx, config.GeminiModelsConfig.Pro, data, mimeType, prompt)
 }
 
+// AnalyzeDocumentFull は解析・予定抽出・OCRを1回で行う（統合版）
+func (r *AIRouter) AnalyzeDocumentFull(ctx context.Context, data []byte, mimeType, fileName, analysisPrompt string) (*model.DocumentBundle, error) {
+	eventsPrompt := buildEventsAndTasksPrompt(fileName)
+	ocrPrompt := buildOCRBundlePrompt()
+	combinedPrompt := buildCombinedPrompt(analysisPrompt, eventsPrompt, ocrPrompt)
+
+	bundle, err := r.callGeminiCombined(ctx, config.GeminiModelsConfig.Flash, data, mimeType, combinedPrompt)
+	if err == nil && r.isCombinedConfident(bundle) {
+		return bundle, nil
+	}
+
+	if config.AIRouter.EnableProEscalation {
+		log.Printf("統合解析が不十分なためProにエスカレーション")
+		return r.callGeminiCombined(ctx, config.GeminiModelsConfig.Pro, data, mimeType, combinedPrompt)
+	}
+
+	return bundle, err
+}
+
 // callGemini はGemini APIを呼び出し
 func (r *AIRouter) callGemini(ctx context.Context, modelName string, data []byte, mimeType string, prompt string) (*model.AnalysisResult, error) {
 	genModel := r.client.GenerativeModel(modelName) // Rename variable to avoid shadowing package name
@@ -156,6 +175,47 @@ func (r *AIRouter) callGemini(ctx context.Context, modelName string, data []byte
 	return &result, nil
 }
 
+// callGeminiCombined は統合レスポンスを取得
+func (r *AIRouter) callGeminiCombined(ctx context.Context, modelName string, data []byte, mimeType string, prompt string) (*model.DocumentBundle, error) {
+	genModel := r.client.GenerativeModel(modelName)
+	genModel.GenerationConfig.ResponseMIMEType = "application/json"
+
+	var dataPart genai.Part
+	if mimeType == "application/pdf" {
+		dataPart = genai.Blob{
+			MIMEType: mimeType,
+			Data:     data,
+		}
+	} else {
+		format := "jpeg"
+		if len(mimeType) > 6 {
+			format = mimeType[6:]
+		}
+		dataPart = genai.ImageData(format, data)
+	}
+
+	resp, err := genModel.GenerateContent(ctx,
+		dataPart,
+		genai.Text(prompt),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("gemini API call failed (%s): %w", modelName, err)
+	}
+
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("no response from gemini API")
+	}
+
+	text := fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
+
+	var bundle model.DocumentBundle
+	if err := json.Unmarshal([]byte(text), &bundle); err != nil {
+		return nil, fmt.Errorf("failed to parse combined JSON response: %w", err)
+	}
+
+	return &bundle, nil
+}
+
 // isConfident は信頼度スコアをチェック
 func (r *AIRouter) isConfident(result *model.AnalysisResult) bool {
 	if result == nil {
@@ -164,11 +224,29 @@ func (r *AIRouter) isConfident(result *model.AnalysisResult) bool {
 	return result.ConfidenceScore >= config.AIRouter.ConfidenceThreshold
 }
 
-// ExtractEventsAndTasks はドキュメントから予定とタスクを抽出
-func (r *AIRouter) ExtractEventsAndTasks(ctx context.Context, data []byte, mimeType string, fileName string) (*model.EventsAndTasks, error) {
-	today := time.Now().Format("2006-01-02") // Use time.Now()
+func (r *AIRouter) isCombinedConfident(bundle *model.DocumentBundle) bool {
+	if bundle == nil || bundle.Analysis == nil {
+		return false
+	}
+	if bundle.Analysis.ConfidenceScore < config.AIRouter.ConfidenceThreshold {
+		return false
+	}
+	if bundle.OCRBundle != nil {
+		if bundle.OCRBundle.ConfidenceScore < config.AIRouter.ConfidenceThreshold {
+			return false
+		}
+		if bundle.OCRBundle.Quality.NeedsHighModel ||
+			(bundle.OCRBundle.Quality.Uncertain && len(bundle.OCRBundle.Facts) < 3) ||
+			len(bundle.OCRBundle.OCRText) < 200 {
+			return false
+		}
+	}
+	return true
+}
 
-	prompt := fmt.Sprintf(`
+func buildEventsAndTasksPrompt(fileName string) string {
+	today := time.Now().Format("2006-01-02")
+	return fmt.Sprintf(`
 あなたは学校のお便りから予定とタスクを抽出するアシスタントです。
 以下の画像を解析し、JSON形式で回答してください。
 
@@ -205,6 +283,58 @@ func (r *AIRouter) ExtractEventsAndTasks(ctx context.Context, data []byte, mimeT
 ## ファイル名
 %s
 `, today, today[:4], fileName)
+}
+
+func buildOCRBundlePrompt() string {
+	return `この画像/ドキュメントを解析し、以下のJSON形式で回答してください。
+
+{
+  "ocr_text": "画像/ドキュメントに含まれるすべてのテキスト（OCR結果）",
+  "facts": [
+    "実際に本文から抽出した項目のみ"
+  ],
+  "summary": "要約（1-2文、曖昧な場合は空文字）",
+  "confidence_score": 0.0-1.0,
+  "quality": {
+    "uncertain": false,
+    "needs_high_model": false,
+    "notes": "読み取りに問題があれば記載"
+  }
+}
+
+重要ルール：
+- factsには実際に本文から抽出した項目のみを入れてください。説明文やテンプレ文は絶対に含めないでください。
+- factsには日付、金額、名前、住所など具体的な情報を抽出。推測は禁止。
+- 見つからない場合は "不明" を入れてください。最大10項目。
+- 読み取れない部分がある場合は quality.uncertain を true に。
+- summaryは確信がなければ空文字で可。`
+}
+
+func buildCombinedPrompt(analysisPrompt, eventsPrompt, ocrPrompt string) string {
+	return fmt.Sprintf(`
+以下のドキュメントを解析し、必ず次のJSON形式で回答してください。
+トップレベル以外に余計な説明やコードブロックは出力しないでください。
+
+{
+  "analysis": { ... },
+  "events_and_tasks": { ... },
+  "ocr_bundle": { ... }
+}
+
+## analysis_instructions
+%s
+
+## events_and_tasks_instructions
+%s
+
+## ocr_bundle_instructions
+%s
+`, analysisPrompt, eventsPrompt, ocrPrompt)
+}
+
+// ExtractEventsAndTasks はドキュメントから予定とタスクを抽出
+func (r *AIRouter) ExtractEventsAndTasks(ctx context.Context, data []byte, mimeType string, fileName string) (*model.EventsAndTasks, error) {
+	prompt := buildEventsAndTasksPrompt(fileName)
 
 	genModel := r.client.GenerativeModel(config.GeminiModelsConfig.Flash) // Rename to genModel
 	genModel.GenerationConfig.ResponseMIMEType = "application/json"
@@ -256,28 +386,7 @@ func (r *AIRouter) ExtractOCRText(ctx context.Context, data []byte, mimeType str
 
 // ExtractOCRBundle はドキュメントからOCRテキスト、事実、要約を構造化して抽出
 func (r *AIRouter) ExtractOCRBundle(ctx context.Context, data []byte, mimeType string) (*model.OCRBundle, error) {
-	prompt := `この画像/ドキュメントを解析し、以下のJSON形式で回答してください。
-
-{
-  "ocr_text": "画像/ドキュメントに含まれるすべてのテキスト（OCR結果）",
-  "facts": [
-    "実際に本文から抽出した項目のみ"
-  ],
-  "summary": "要約（1-2文、曖昧な場合は空文字）",
-  "confidence_score": 0.0-1.0,
-  "quality": {
-    "uncertain": false,
-    "needs_high_model": false,
-    "notes": "読み取りに問題があれば記載"
-  }
-}
-
-重要ルール：
-- factsには実際に本文から抽出した項目のみを入れてください。説明文やテンプレ文は絶対に含めないでください。
-- factsには日付、金額、名前、住所など具体的な情報を抽出。推測は禁止。
-- 見つからない場合は "不明" を入れてください。最大10項目。
-- 読み取れない部分がある場合は quality.uncertain を true に。
-- summaryは確信がなければ空文字で可。`
+	prompt := buildOCRBundlePrompt()
 
 	genModel := r.client.GenerativeModel(config.GeminiModelsConfig.Flash)
 	genModel.GenerationConfig.ResponseMIMEType = "application/json"
