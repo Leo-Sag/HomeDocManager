@@ -201,7 +201,9 @@ func openBrowser(url string) {
 	var err error
 	switch os.Getenv("OS") {
 	case "Windows_NT":
-		err = runCommand("cmd", "/c", "start", url)
+		// Windowsではstart コマンドがURL中の&を誤解釈するため、
+		// rundll32経由でブラウザを起動する
+		err = runCommand("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
 		// Mac, Linux
 		err = runCommand("open", url)
