@@ -3,6 +3,18 @@
 Google Drive 上の家庭内書類（PDF・画像）を Gemini AI で自動解析し、カテゴリ分類・リネーム・フォルダ振り分けを行う Cloud Run マイクロサービスです。
 Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot によるドキュメント検索（RAG）にも対応しています。
 
+## ステータス
+
+**本番環境デプロイ済み** (2026-02-09)
+- OAuth 2.0 同意画面: 本番公開済み（Sensitive スコープのみ、Restricted スコープなし）
+- OAuth スコープ: `drive.file`, `documents`, `calendar.events`, `tasks`, `photoslibrary.appendonly`
+- Google 検証: 提出準備中（デモ動画作成予定）
+- Cloud Run リビジョン: 00052-jlq（重複処理完全解消版）
+
+**ポリシーページ**:
+- プライバシーポリシー: https://leo-sag.github.io/HomeDocManager/privacy-policy.html
+- 利用規約: https://leo-sag.github.io/HomeDocManager/terms-of-service.html
+
 ## 機能一覧
 
 ### ファイル自動仕分け
@@ -50,7 +62,10 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 - **Cloud Scheduler 自動運用**:
   - `watch-renew-daily`: 毎週月・木 12:00 JST に Watch を自動更新（7日期限切れ防止）
   - `inbox-trigger-hourly`: 毎時 Inbox フォルダをスキャン（webhook 未検知のファイルを補完処理）
-- **並行処理対応**: Drive Propertiesによるファイル処理済みマーカーで重複処理を防止（複数インスタンス同時起動時も安全）
+- **並行処理対応**: 3層の重複処理防止機構
+  - インメモリロック（`sync.Mutex`）による同一ファイルIDの排他制御
+  - Drive Properties による処理済みマーカー（早期設定）
+  - 単一インスタンス構成（`max-instances=1`）でインメモリロック全体適用
 - 構造化ログ（`slog` ベース、Cloud Logging 互換 severity / trace 相関）
 
 ## アーキテクチャ
@@ -131,7 +146,7 @@ HomeDocManager/
 | Web フレームワーク | Gin |
 | AI | Gemini 3 Flash / Pro (google/generative-ai-go) |
 | Google APIs | Drive v3, Docs v1, Calendar v3, Tasks v1, Photos (OAuth REST) |
-| 認証 | **OAuth 2.0 優先** + Service Account フォールバック |
+| 認証 | **SA + OAuth 二重認証** (SA: ファイル操作, OAuth: Docs/Calendar/Tasks/Photos) |
 | シークレット管理 | Google Secret Manager |
 | メッセージング | LINE Bot SDK v7 |
 | コンテナ | Docker (マルチステージ Alpine) |
@@ -197,8 +212,8 @@ HomeDocManager/
 |------|-----|
 | メモリ | 384Mi |
 | CPU | 1 |
-| 同時実行数 | 4 |
-| 最大インスタンス | 3 |
+| 同時実行数 | 80 |
+| 最大インスタンス | 1（重複処理防止のため単一インスタンス構成） |
 | 最小インスタンス | 0（スケール to ゼロ） |
 | タイムアウト | 540s |
 | リージョン | asia-northeast1 |
@@ -427,8 +442,11 @@ gcloud scheduler jobs run inbox-trigger-hourly --location=asia-northeast1
 
 **解決策**:
 
-- リビジョン 00044 以降では、ファイル処理済みマーカーにより自動的に重複防止
-- ログで「既に処理済みのファイルです」が表示されることを確認
+- リビジョン 00052 以降では、以下の3層の重複防止機構により完全に解消:
+  1. **インメモリロック**: 同一ファイルIDの同時処理を `sync.Mutex` で排他制御
+  2. **早期マーキング**: ファイル処理の最初に Drive Properties で処理済みマークを設定
+  3. **単一インスタンス構成**: `max-instances=1` によりインメモリロックが全リクエストで有効
+- ログで「別のリクエストで処理中のためスキップ」または「既に処理済みのファイルです」が表示されることを確認
 - 既に作成された重複タスクは手動で削除が必要
 
 ## テスト
@@ -440,11 +458,32 @@ go test ./...
 
 ## アーキテクチャ上の注意点
 
-### OAuth vs Service Account
+### OAuth + Service Account 二重認証アーキテクチャ
 
-- **OAuth 優先**: NotebookLM 同期・Google Photos アップロードには OAuth リフレッシュトークンが必須
-- **SA フォールバック**: OAuth が設定されていない場合のみ Service Account にフォールバック
-- **容量制限**: Service Account は Drive 容量 15GB 制限があるため、大量ファイル処理には OAuth が必須
+本アプリケーションは **SA（ファイル操作）+ OAuth（API制限操作）** の二重認証モデルを採用しています:
+
+#### Service Account で実行:
+- Drive ファイルの読み取り・移動・リネーム・プロパティ更新
+- Drive Changes API（Watch通知）による変更検知
+- フォルダ作成・検索
+
+#### OAuth で実行（ユーザーアカウント必須）:
+- NotebookLM 用 Google Docs 作成・編集（`drive.file`, `documents` スコープ）
+- Google Photos アップロード（`photoslibrary.appendonly` スコープ）
+- Google Calendar イベント作成（`calendar.events` スコープ）
+- Google Tasks 作成（`tasks` スコープ）
+
+#### なぜ二重認証が必要か:
+- **SA の容量制限**: Service Account の Drive 容量は 15GB に制限されており、NotebookLM 統合ドキュメントを大量作成できない
+- **OAuth の Restricted スコープ回避**: `drive` スコープ（全ファイルアクセス）は Google の CASA 監査（$15,000+）が必要なため、`drive.file` スコープ（アプリ作成ファイルのみ）+ SA で代替
+- **SA フォールバック**: OAuth が設定されていない場合は SA にフォールバックするが、NotebookLM 同期は容量制限により失敗する可能性あり
+
+#### 認証状態の確認:
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" https://your-service-url/admin/info
+```
+- OAuth 正常時: `"emailAddress": "your-email@gmail.com"`
+- SA フォールバック時: `"emailAddress": "homedocmanager-sa@...iam.gserviceaccount.com"`
 
 ### Cloud Run のスケール to ゼロ
 
