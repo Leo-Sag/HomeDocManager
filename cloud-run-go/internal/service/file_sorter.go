@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/leo-sagawa/homedocmanager/internal/config"
@@ -21,6 +22,10 @@ type FileSorter struct {
 	tasksClient    *TasksClient
 	notebooklmSync *NotebookLMSync
 	gradeManager   *GradeManager
+
+	// 並行処理制御
+	processingMu    sync.Mutex
+	processingFiles map[string]bool
 }
 
 // NewFileSorter は新しいFileSorterを作成
@@ -35,19 +40,37 @@ func NewFileSorter(
 	gradeManager *GradeManager,
 ) *FileSorter {
 	return &FileSorter{
-		aiRouter:       aiRouter,
-		pdfProcessor:   pdfProcessor,
-		driveClient:    driveClient,
-		photosClient:   photosClient,
-		calendarClient: calendarClient,
-		tasksClient:    tasksClient,
-		notebooklmSync: notebooklmSync,
-		gradeManager:   gradeManager,
+		aiRouter:        aiRouter,
+		pdfProcessor:    pdfProcessor,
+		driveClient:     driveClient,
+		photosClient:    photosClient,
+		calendarClient:  calendarClient,
+		tasksClient:     tasksClient,
+		notebooklmSync:  notebooklmSync,
+		gradeManager:    gradeManager,
+		processingFiles: make(map[string]bool),
 	}
 }
 
 // ProcessFile はファイルを処理
 func (fs *FileSorter) ProcessFile(ctx context.Context, fileID string) model.ProcessResult {
+	// インメモリロックによる並行処理防止（最優先）
+	fs.processingMu.Lock()
+	if fs.processingFiles[fileID] {
+		fs.processingMu.Unlock()
+		log.Printf("別のリクエストで処理中のためスキップ: %s", fileID)
+		return model.ProcessResultSkipped
+	}
+	fs.processingFiles[fileID] = true
+	fs.processingMu.Unlock()
+
+	// 処理完了時にロックを解放
+	defer func() {
+		fs.processingMu.Lock()
+		delete(fs.processingFiles, fileID)
+		fs.processingMu.Unlock()
+	}()
+
 	// ファイル情報を取得
 	fileInfo, err := fs.driveClient.GetFile(ctx, fileID)
 	if err != nil {
@@ -76,6 +99,12 @@ func (fs *FileSorter) ProcessFile(ctx context.Context, fileID string) model.Proc
 	if fs.driveClient.IsFileProcessed(ctx, fileID) {
 		log.Printf("既に処理済みのファイルです: %s", fileInfo.Name)
 		return model.ProcessResultSkipped
+	}
+
+	// 即座に処理中マーカーを設定（並行通知からの重複防止）
+	if err := fs.driveClient.MarkFileAsProcessed(ctx, fileID); err != nil {
+		log.Printf("Warning: 処理中マーカー設定失敗: %v", err)
+		// エラーでも続行（既に他のプロセスが処理中の可能性）
 	}
 
 	// 対応ファイル形式をチェック
@@ -143,11 +172,6 @@ func (fs *FileSorter) ProcessFile(ctx context.Context, fileID string) model.Proc
 	if err := fs.driveClient.MoveFile(ctx, fileID, destinationFolderID); err != nil {
 		log.Printf("ファイル移動失敗: %v", err)
 		return model.ProcessResultError
-	}
-
-	// 処理済みマーカーを設定（並行処理での重複防止）
-	if err := fs.driveClient.MarkFileAsProcessed(ctx, fileID); err != nil {
-		log.Printf("Warning: 処理済みマーカー設定失敗: %v (処理は成功)", err)
 	}
 
 	log.Printf("処理完了: %s → %s", fileInfo.Name, newFileName)
