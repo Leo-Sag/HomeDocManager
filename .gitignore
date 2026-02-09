@@ -45,3 +45,10 @@ logs/
 
 # Local secrets (never commit)
 _local_secrets/
+
+# Credentials & tokens (NEVER commit)
+client_secret*.json
+token.json
+access_token.txt
+*_token.txt
+docker_auth_config.json
