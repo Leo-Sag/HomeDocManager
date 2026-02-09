@@ -57,8 +57,8 @@ gcloud run deploy ${SERVICE_NAME} \
     --memory 384Mi \
     --cpu 1 \
     --timeout 540 \
-    --concurrency 4 \
-    --max-instances 3 \
+    --concurrency 80 \
+    --max-instances 1 \
     --set-env-vars "${ENV_VARS}" \
     --set-secrets "${SECRETS}" \
     --service-account homedocmanager-sa@${PROJECT_ID}.iam.gserviceaccount.com
