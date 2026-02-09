@@ -6,7 +6,7 @@ __pycache__/
 .Python
 env/
 build/
-main.exe
+*.exe
 develop-eggs/
 dist/
 downloads/
@@ -52,3 +52,5 @@ token.json
 access_token.txt
 *_token.txt
 docker_auth_config.json
+setup_docker_auth.sh
+auth.html
