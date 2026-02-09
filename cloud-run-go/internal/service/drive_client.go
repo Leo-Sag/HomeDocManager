@@ -19,62 +19,65 @@ import (
 
 // DriveClient はGoogle Drive APIクライアント
 type DriveClient struct {
-	service     *drive.Service
-	docsService *docs.Service
-	oauthCreds  *OAuthCredentials
-	folderCache map[string]string // key: "parentID:folderName", value: folderID
-	folderMu    sync.Mutex
+	service           *drive.Service // SA認証 (ファイル操作用)
+	oauthDriveService *drive.Service // OAuth認証 (About/Doc作成用), SA fallback
+	docsService       *docs.Service  // OAuth認証 (Docs編集用), SA fallback
+	oauthCreds        *OAuthCredentials
+	folderCache       map[string]string // key: "parentID:folderName", value: folderID
+	folderMu          sync.Mutex
 }
 
 // NewDriveClient は新しいDriveClientを作成
+// SA (Service Account) をファイル操作+Watchに、OAuthをAbout/Docs/Doc作成に使用
 func NewDriveClient(ctx context.Context) (*DriveClient, error) {
-	// OAuth認証情報を取得
+	// 1. SA Drive サービスを常に作成（ファイル操作用）
+	saService, err := drive.NewService(ctx, option.WithScopes(drive.DriveScope))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SA drive service: %w", err)
+	}
+
+	client := &DriveClient{
+		service:     saService,
+		folderCache: make(map[string]string),
+	}
+
+	// 2. OAuth 認証を試行
 	creds, err := GetOAuthCredentials(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to get OAuth credentials for Drive, falling back to Service Account: %v", err)
-		// サービスアカウント認証にフォールバック
-		service, err := drive.NewService(ctx, option.WithScopes(drive.DriveScope))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create drive service: %w", err)
+		log.Printf("Warning: OAuth not available, using SA for all operations: %v", err)
+		// SA fallback
+		saDocsService, docsErr := docs.NewService(ctx, option.WithScopes(docs.DocumentsScope))
+		if docsErr != nil {
+			return nil, fmt.Errorf("failed to create SA docs service: %w", docsErr)
 		}
-		docsService, err := docs.NewService(ctx, option.WithScopes(docs.DocumentsScope))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create docs service: %w", err)
-		}
-		return &DriveClient{
-			service:     service,
-			docsService: docsService,
-			folderCache: make(map[string]string),
-		}, nil
+		client.oauthDriveService = saService
+		client.docsService = saDocsService
+		return client, nil
 	}
 
-	// OAuth authenticated client
-	if _, err := creds.GetAccessToken(ctx); err != nil {
-		return nil, fmt.Errorf("failed to get access token for Drive: %w", err)
-	}
+	// 3. OAuth サービスを作成
+	client.oauthCreds = creds
+	ts := &tokenSource{creds: creds, ctx: ctx}
 
-	service, err := drive.NewService(ctx, option.WithTokenSource(&tokenSource{
-		creds: creds,
-		ctx:   ctx,
-	}))
+	oauthDrive, err := drive.NewService(ctx, option.WithTokenSource(ts))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create drive service with OAuth: %w", err)
+		log.Printf("Warning: OAuth Drive service creation failed, using SA fallback: %v", err)
+		client.oauthDriveService = saService
+	} else {
+		client.oauthDriveService = oauthDrive
 	}
 
-	docsService, err := docs.NewService(ctx, option.WithTokenSource(&tokenSource{
-		creds: creds,
-		ctx:   ctx,
-	}))
+	oauthDocs, err := docs.NewService(ctx, option.WithTokenSource(ts))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create docs service with OAuth: %w", err)
+		log.Printf("Warning: OAuth Docs service creation failed, using SA fallback: %v", err)
+		saDocsService, _ := docs.NewService(ctx, option.WithScopes(docs.DocumentsScope))
+		client.docsService = saDocsService
+	} else {
+		client.docsService = oauthDocs
 	}
 
-	return &DriveClient{
-		service:     service,
-		docsService: docsService,
-		oauthCreds:  creds,
-		folderCache: make(map[string]string),
-	}, nil
+	log.Println("DriveClient initialized: SA for file ops+Watch, OAuth for About/Docs/Doc creation")
+	return client, nil
 }
 
 // tokenSource は oauth2.TokenSource インターフェースを実装
@@ -98,9 +101,14 @@ func (c *DriveClient) GetDriveService() *drive.Service {
 	return c.service
 }
 
-// GetDocsService は内部のDocsサービスを返す
+// GetDocsService は内部のDocsサービスを返す（OAuth認証、SA fallback）
 func (c *DriveClient) GetDocsService() *docs.Service {
 	return c.docsService
+}
+
+// GetOAuthDriveService はOAuth認証のDriveサービスを返す（About/Doc作成用）
+func (c *DriveClient) GetOAuthDriveService() *drive.Service {
+	return c.oauthDriveService
 }
 
 // GetFile はファイル情報を取得
@@ -128,19 +136,10 @@ func (c *DriveClient) DownloadFile(ctx context.Context, fileID string) ([]byte, 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		log.Printf("ダウンロード開始（試行 %d/%d）: %s", attempt+1, maxRetries, fileID)
 
-		// リトライ時はサービスを再構築（トークン切れなどの対策）
+		// リトライ時はSAサービスを再構築（接続切れなどの対策）
 		if attempt > 0 {
-			log.Println("サービスオブジェクトを再構築してリトライします")
-			var service *drive.Service
-			var err error
-			if c.oauthCreds != nil {
-				service, err = drive.NewService(ctx, option.WithTokenSource(&tokenSource{
-					creds: c.oauthCreds,
-					ctx:   ctx,
-				}))
-			} else {
-				service, err = drive.NewService(ctx, option.WithScopes(drive.DriveScope))
-			}
+			log.Println("SAサービスオブジェクトを再構築してリトライします")
+			service, err := drive.NewService(ctx, option.WithScopes(drive.DriveScope))
 			if err != nil {
 				log.Printf("サービス再構築エラー: %v", err)
 				time.Sleep(time.Duration(1<<uint(attempt)) * time.Second)
@@ -302,9 +301,9 @@ func (c *DriveClient) ListFilesInFolder(ctx context.Context, folderID string, li
 	return files, nil
 }
 
-// GetAbout はストレージ情報を取得
+// GetAbout はストレージ情報を取得（OAuth Drive使用: ユーザー情報を返す）
 func (c *DriveClient) GetAbout(ctx context.Context) (map[string]interface{}, error) {
-	about, err := c.service.About.Get().
+	about, err := c.oauthDriveService.About.Get().
 		Fields("storageQuota, user").
 		Context(ctx).
 		Do()
@@ -340,7 +339,7 @@ type WatchInfo struct {
 	StartPageToken string
 }
 
-// StartWatch はフォルダの変更監視を開始
+// StartWatch はフォルダの変更監視を開始（SA使用: 共有フォルダの変更を監視）
 func (c *DriveClient) StartWatch(ctx context.Context, webhookURL string) (*WatchInfo, error) {
 	// 変更開始トークンを取得
 	startPageToken, err := c.service.Changes.GetStartPageToken().Context(ctx).Do()
@@ -381,7 +380,7 @@ func (c *DriveClient) StartWatch(ctx context.Context, webhookURL string) (*Watch
 	}, nil
 }
 
-// StopWatch は変更監視を停止
+// StopWatch は変更監視を停止（SA使用）
 func (c *DriveClient) StopWatch(ctx context.Context, channelID, resourceID string) error {
 	channel := &drive.Channel{
 		Id:         channelID,
@@ -397,7 +396,7 @@ func (c *DriveClient) StopWatch(ctx context.Context, channelID, resourceID strin
 	return nil
 }
 
-// GetChanges は変更されたファイルIDを取得
+// GetChanges は変更されたファイルIDを取得（SA使用: 共有フォルダの変更ストリーム）
 func (c *DriveClient) GetChanges(ctx context.Context, pageToken string) ([]string, string, error) {
 	var fileIDs []string
 	nextPageToken := pageToken

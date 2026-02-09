@@ -363,7 +363,11 @@ gcloud scheduler jobs run inbox-trigger-hourly --location=asia-northeast1
 
 ### NotebookLM 同期が失敗する（storageQuotaExceeded）
 
-**原因**: OAuth リフレッシュトークンが設定されておらず、Service Account で動作している（15GB 容量制限）
+**原因**: OAuth リフレッシュトークンが未設定または失効し、Service Account にフォールバックしている（SA は 15GB 容量制限）
+
+**確認方法**: `GET /admin/info` のレスポンスで認証ユーザーを確認
+- OAuth 正常時: `"emailAddress": "your-email@gmail.com"` （個人アカウント）
+- SA フォールバック時: `"emailAddress": "homedocmanager-sa@...iam.gserviceaccount.com"`
 
 **解決策**:
 
@@ -372,6 +376,23 @@ gcloud scheduler jobs run inbox-trigger-hourly --location=asia-northeast1
 3. Service Account に Secret アクセス権限を付与
 4. **重要**: `deploy-cloudbuild.sh` の `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` がデフォルト値として設定されていることを確認
 5. 再デプロイ
+
+### OAuth リフレッシュトークンが失効する（invalid_grant）
+
+**症状**: ログに `Token has been expired or revoked` が出力され、Drive / Calendar / Tasks / Photos の全サービスが機能しない
+
+**原因**: Google OAuth のリフレッシュトークンは以下の条件で失効する
+- Google アカウントのパスワード変更
+- アカウントのセキュリティ設定変更
+- 6ヶ月間トークンが使用されなかった場合
+- OAuth 同意画面で「テスト」モードの場合は 7 日で失効
+
+**解決策**:
+
+1. `tools/setup_oauth.go` でリフレッシュトークンを再取得
+2. Secret Manager を更新: `echo -n "NEW_TOKEN" | gcloud secrets versions add OAUTH_REFRESH_TOKEN --data-file=-`
+3. 再デプロイ（または新リビジョンで Secret の再読み込み）
+4. `GET /admin/info` で OAuth ユーザーが表示されることを確認
 
 ### Drive Watch が動作しない
 

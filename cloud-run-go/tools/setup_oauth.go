@@ -33,11 +33,14 @@ func main() {
 	}
 
 	// OAuth2設定
+	// Note: auth/drive (Restricted) を除去し、Sensitive以下のスコープのみ使用
+	// これにより CASA第三者監査なしで同意画面を本番公開可能
 	config, err := google.ConfigFromJSON(b,
 		"https://www.googleapis.com/auth/photoslibrary.appendonly", // Google Photos (appendonly)
 		"https://www.googleapis.com/auth/calendar.events",          // Google Calendar
 		"https://www.googleapis.com/auth/tasks",                    // Google Tasks
-		"https://www.googleapis.com/auth/drive",                    // Google Drive (for storage quota)
+		"https://www.googleapis.com/auth/documents",                // Google Docs (create/edit)
+		"https://www.googleapis.com/auth/drive.file",               // Drive: NotebookLM doc creation + About.Get (Recommended, not Restricted)
 	)
 	if err != nil {
 		log.Fatalf("Unable to parse client secret file to config: %v", err)

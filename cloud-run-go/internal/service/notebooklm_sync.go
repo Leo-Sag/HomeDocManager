@@ -179,7 +179,7 @@ func (ns *NotebookLMSync) createUnifiedDoc(ctx context.Context, docName, parentI
 		Parents:  []string{parentID},
 	}
 
-	createdDoc, err := ns.driveClient.service.Files.Create(file).
+	createdDoc, err := ns.driveClient.oauthDriveService.Files.Create(file).
 		Fields("id").
 		SupportsAllDrives(true).
 		Context(ctx).
@@ -216,7 +216,7 @@ func (ns *NotebookLMSync) createUnifiedDoc(ctx context.Context, docName, parentI
 			Type:         "user",
 			EmailAddress: config.NotebookLMOwnerEmail,
 		}
-		_, err := ns.driveClient.service.Permissions.Create(docID, permission).
+		_, err := ns.driveClient.oauthDriveService.Permissions.Create(docID, permission).
 			TransferOwnership(true).
 			Context(ctx).
 			Do()
