@@ -37,6 +37,11 @@ if gcloud secrets describe LINE_CHANNEL_SECRET --project "${PROJECT_ID}" >/dev/n
 else
     echo "Warning: LINE_CHANNEL_SECRET not found; LINE Bot will be disabled"
 fi
+if gcloud secrets describe DISCORD_WEBHOOK_URL --project "${PROJECT_ID}" >/dev/null 2>&1; then
+    SECRETS="${SECRETS},DISCORD_WEBHOOK_URL=DISCORD_WEBHOOK_URL:latest"
+else
+    echo "Warning: DISCORD_WEBHOOK_URL not found; Discord notifications will be disabled"
+fi
 
 echo "=== HomeDocManager Go版デプロイ (Cloud Build) ==="
 echo "Project ID: ${PROJECT_ID}"

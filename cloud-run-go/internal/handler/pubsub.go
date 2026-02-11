@@ -156,6 +156,11 @@ func (h *PubSubHandler) TriggerInbox(c *gin.Context) {
 		"details":   []map[string]interface{}{},
 	}
 
+	var discordDetails []service.FileDetail
+	processedCount := 0
+	skippedCount := 0
+	errorCount := 0
+
 	for _, file := range files {
 		fileID := file.ID
 		fileName := file.Name
@@ -168,13 +173,25 @@ func (h *PubSubHandler) TriggerInbox(c *gin.Context) {
 			"result": string(result),
 		}
 
-		if result == model.ProcessResultProcessed || result == model.ProcessResultSkipped {
+		switch result {
+		case model.ProcessResultProcessed:
+			processedCount++
 			results["processed"] = results["processed"].(int) + 1
-		} else {
+		case model.ProcessResultSkipped:
+			skippedCount++
+			results["processed"] = results["processed"].(int) + 1
+		default:
+			errorCount++
 			results["errors"] = results["errors"].(int) + 1
 		}
 
+		discordDetails = append(discordDetails, service.FileDetail{Name: fileName, Result: string(result)})
 		results["details"] = append(results["details"].([]map[string]interface{}), detail)
+	}
+
+	// Discord通知
+	if h.services.DiscordNotifier != nil {
+		h.services.DiscordNotifier.NotifyInboxScanResult(len(files), processedCount, skippedCount, errorCount, discordDetails)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -228,6 +245,9 @@ func (h *PubSubHandler) HandleDriveWebhook(c *gin.Context) {
 		processed, err := h.watchManager.HandleNotification(c.Request.Context())
 		if err != nil {
 			log.Printf("Error processing notification: %v", err)
+			if h.services.DiscordNotifier != nil {
+				h.services.DiscordNotifier.NotifyError("webhook処理", err.Error())
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
