@@ -22,6 +22,9 @@ var (
 
 	// Drive webhook検証用トークン（設定されていれば検証する）
 	DriveWebhookToken = os.Getenv("DRIVE_WEBHOOK_TOKEN")
+
+	// Discord通知設定
+	DiscordWebhookURL = os.Getenv("DISCORD_WEBHOOK_URL")
 )
 
 // Secret Manager設定
