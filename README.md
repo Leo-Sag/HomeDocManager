@@ -8,7 +8,7 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 **本番環境デプロイ済み** (2026-02-09)
 - OAuth 2.0 同意画面: 本番公開済み（Sensitive スコープのみ、Restricted スコープなし）
 - OAuth スコープ: `drive.file`, `documents`, `calendar.events`, `tasks`, `photoslibrary.appendonly`
-- Google 検証: 提出準備中（デモ動画作成予定）
+- Google 検証: 審査中（デモ動画提出済み: https://youtu.be/PZclODCN8vI）
 - Cloud Run リビジョン: 00052-jlq（重複処理完全解消版）
 
 **ポリシーページ**:
@@ -53,6 +53,12 @@ Google Calendar / Tasks / Photos / NotebookLM との連携、LINE Bot による�
 - 回答のソース元 Google Drive URL を自動提示
 - カテゴリ別ナビゲーション（Flex Message）・クイックリプライ対応
 - 家族メンバーごとのアクセス制御（大人情報 vs 子供情報の権限管理）
+
+### Discord 通知
+
+- ファイル処理エラー発生時に Discord Webhook で即時通知
+- 毎時 Inbox スキャン完了時に処理結果サマリーを通知（処理 or エラーがある場合のみ）
+- オプショナル機能（`DISCORD_WEBHOOK_URL` 未設定時は無効）
 
 ### 管理・運用
 
@@ -116,6 +122,7 @@ HomeDocManager/
 |   |   |   +-- watch_manager.go   # Drive Watch 管理
 |   |   |   +-- grade_manager.go   # 学年・クラス管理
 |   |   |   +-- auth_helper.go     # OAuth 認証ヘルパー
+|   |   |   +-- discord_notifier.go # Discord Webhook 通知
 |   |   |   +-- services.go        # サービスコンテナ
 |   |   +-- linebot/
 |   |   |   +-- handler.go         # LINE webhook ハンドラー
@@ -149,6 +156,7 @@ HomeDocManager/
 | 認証 | **SA + OAuth 二重認証** (SA: ファイル操作, OAuth: Docs/Calendar/Tasks/Photos) |
 | シークレット管理 | Google Secret Manager |
 | メッセージング | LINE Bot SDK v7 |
+| 通知 | Discord Webhook |
 | コンテナ | Docker (マルチステージ Alpine) |
 | PDF 処理 | poppler-utils (pdftoppm) |
 | ログ | log/slog (Cloud Logging 互換 JSON) |
@@ -194,6 +202,7 @@ HomeDocManager/
 | `DRIVE_WEBHOOK_TOKEN` | Drive Watch webhook 検証トークン |
 | `LINE_CHANNEL_SECRET` | LINE Bot チャンネルシークレット（オプション） |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Bot チャンネルアクセストークン（オプション） |
+| `DISCORD_WEBHOOK_URL` | Discord Webhook URL（オプション） |
 
 ### オプション
 

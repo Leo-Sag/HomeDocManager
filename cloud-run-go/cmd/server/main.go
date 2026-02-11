@@ -213,6 +213,16 @@ func initServices(ctx context.Context) (*service.Services, error) {
 	// GradeManager
 	gradeManager := service.NewGradeManager()
 
+	// DiscordNotifier (オプショナル)
+	discordWebhookURL := config.DiscordWebhookURL
+	if discordWebhookURL == "" {
+		discordWebhookURL = getSecretValue(ctx, "DISCORD_WEBHOOK_URL")
+	}
+	discordNotifier := service.NewDiscordNotifier(discordWebhookURL)
+	if discordNotifier != nil {
+		log.Printf("DiscordNotifier initialized")
+	}
+
 	// FileSorter
 	fileSorter := service.NewFileSorter(
 		aiRouter,
@@ -226,15 +236,16 @@ func initServices(ctx context.Context) (*service.Services, error) {
 	)
 
 	return &service.Services{
-		AIRouter:       aiRouter,
-		PDFProcessor:   pdfProcessor,
-		DriveClient:    driveClient,
-		PhotosClient:   photosClient,
-		CalendarClient: calendarClient,
-		TasksClient:    tasksClient,
-		NotebookLMSync: notebooklmSync,
-		GradeManager:   gradeManager,
-		FileSorter:     fileSorter,
+		AIRouter:        aiRouter,
+		PDFProcessor:    pdfProcessor,
+		DriveClient:     driveClient,
+		PhotosClient:    photosClient,
+		CalendarClient:  calendarClient,
+		TasksClient:     tasksClient,
+		NotebookLMSync:  notebooklmSync,
+		GradeManager:    gradeManager,
+		FileSorter:      fileSorter,
+		DiscordNotifier: discordNotifier,
 	}, nil
 }
 
