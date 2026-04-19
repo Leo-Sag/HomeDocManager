@@ -115,25 +115,19 @@ func main() {
 	fmt.Println("\n✅ リフレッシュトークンの取得に成功しました！")
 	fmt.Printf("\nRefresh Token:\n%s\n\n", tok.RefreshToken)
 
-	// Secret Managerに保存するか確認
-	fmt.Print("Secret Managerに保存しますか? (y/n): ")
-	var answer string
-	fmt.Scanln(&answer)
-
-	if answer == "y" || answer == "Y" {
-		if err := saveToSecretManager(ctx, projectID, tok.RefreshToken); err != nil {
-			log.Printf("Error saving to Secret Manager: %v", err)
-			fmt.Println("\n手動でSecret Managerに保存してください:")
-			printManualInstructions(tok.RefreshToken)
-		} else {
-			fmt.Println("\n✅ Secret Managerへの保存が完了しました！")
-			fmt.Println("\n次のステップ:")
-			fmt.Println("1. cloud-run-go/deploy.sh を編集してPROJECT_IDを設定")
-			fmt.Println("2. ./deploy.sh を実行してデプロイ")
-		}
-	} else {
-		fmt.Println("\n手動でSecret Managerに保存してください:")
+	// Secret Managerに自動保存
+	fmt.Println("Secret Managerに保存中...")
+	if err := saveToSecretManager(ctx, projectID, tok.RefreshToken); err != nil {
+		log.Printf("Error saving to Secret Manager: %v", err)
+		fmt.Println("\n⚠️  自動保存に失敗しました。手動でSecret Managerに保存してください:")
 		printManualInstructions(tok.RefreshToken)
+	} else {
+		fmt.Println("✅ Secret Managerへの保存が完了しました！（OAUTH_REFRESH_TOKEN）")
+		fmt.Println("\n次のステップ:")
+		fmt.Println("1. Cloud Runを再起動して新しいトークンを反映:")
+		fmt.Printf("   gcloud run services update %s --region=asia-northeast1 --project=%s --no-traffic\n", "homedocmanager-go", projectID)
+		fmt.Printf("   gcloud run services update-traffic %s --region=asia-northeast1 --project=%s --to-latest\n", "homedocmanager-go", projectID)
+		fmt.Println("2. admin/info でOAuthユーザーが表示されることを確認")
 	}
 
 	// トークン全体をJSONで保存（オプション）

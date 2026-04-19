@@ -122,6 +122,25 @@ func (d *DiscordNotifier) NotifyInboxScanResult(total, processed, skipped, error
 	d.send(discordPayload{Embeds: []discordEmbed{embed}})
 }
 
+// NotifyStartupError はサービス起動時の初期化エラーをDiscordに通知する
+func (d *DiscordNotifier) NotifyStartupError(serviceName, errorMsg string) {
+	if d == nil {
+		return
+	}
+
+	embed := discordEmbed{
+		Title: "サービス初期化エラー",
+		Color: colorRed,
+		Fields: []discordField{
+			{Name: "サービス", Value: serviceName, Inline: true},
+			{Name: "エラー", Value: truncate(errorMsg, 1024), Inline: false},
+		},
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	d.send(discordPayload{Embeds: []discordEmbed{embed}})
+}
+
 // send はDiscord Webhookにペイロードを送信する
 func (d *DiscordNotifier) send(payload discordPayload) {
 	body, err := json.Marshal(payload)

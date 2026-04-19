@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
@@ -178,42 +179,7 @@ func initServices(ctx context.Context) (*service.Services, error) {
 	// PDFProcessor
 	pdfProcessor := service.NewPDFProcessor()
 
-	// PhotosClient (オプショナル)
-	var photosClient *service.PhotosClient
-	photosClient, err = service.NewPhotosClient(ctx)
-	if err != nil {
-		log.Printf("Warning: PhotosClient initialization failed: %v", err)
-		photosClient = nil
-	}
-
-	// CalendarClient (オプショナル)
-	var calendarClient *service.CalendarClient
-	calendarClient, err = service.NewCalendarClient(ctx)
-	if err != nil {
-		log.Printf("Warning: CalendarClient initialization failed: %v", err)
-		calendarClient = nil
-	}
-
-	// TasksClient (オプショナル)
-	var tasksClient *service.TasksClient
-	tasksClient, err = service.NewTasksClient(ctx)
-	if err != nil {
-		log.Printf("Warning: TasksClient initialization failed: %v", err)
-		tasksClient = nil
-	}
-
-	// NotebookLMSync (オプショナル)
-	var notebooklmSync *service.NotebookLMSync
-	notebooklmSync, err = service.NewNotebookLMSync(ctx, driveClient)
-	if err != nil {
-		log.Printf("Warning: NotebookLMSync initialization failed: %v", err)
-		notebooklmSync = nil
-	}
-
-	// GradeManager
-	gradeManager := service.NewGradeManager()
-
-	// DiscordNotifier (オプショナル)
+	// DiscordNotifier (オプショナル、他サービスのエラー通知に使うため先に初期化)
 	discordWebhookURL := config.DiscordWebhookURL
 	if discordWebhookURL == "" {
 		discordWebhookURL = getSecretValue(ctx, "DISCORD_WEBHOOK_URL")
@@ -222,6 +188,45 @@ func initServices(ctx context.Context) (*service.Services, error) {
 	if discordNotifier != nil {
 		log.Printf("DiscordNotifier initialized")
 	}
+
+	// PhotosClient (オプショナル)
+	var photosClient *service.PhotosClient
+	photosClient, err = service.NewPhotosClient(ctx)
+	if err != nil {
+		slog.Error("PhotosClient initialization failed", "error", err)
+		discordNotifier.NotifyStartupError("PhotosClient", err.Error())
+		photosClient = nil
+	}
+
+	// CalendarClient (オプショナル)
+	var calendarClient *service.CalendarClient
+	calendarClient, err = service.NewCalendarClient(ctx)
+	if err != nil {
+		slog.Error("CalendarClient initialization failed", "error", err)
+		discordNotifier.NotifyStartupError("CalendarClient", err.Error())
+		calendarClient = nil
+	}
+
+	// TasksClient (オプショナル)
+	var tasksClient *service.TasksClient
+	tasksClient, err = service.NewTasksClient(ctx)
+	if err != nil {
+		slog.Error("TasksClient initialization failed", "error", err)
+		discordNotifier.NotifyStartupError("TasksClient", err.Error())
+		tasksClient = nil
+	}
+
+	// NotebookLMSync (オプショナル)
+	var notebooklmSync *service.NotebookLMSync
+	notebooklmSync, err = service.NewNotebookLMSync(ctx, driveClient)
+	if err != nil {
+		slog.Error("NotebookLMSync initialization failed", "error", err)
+		discordNotifier.NotifyStartupError("NotebookLMSync", err.Error())
+		notebooklmSync = nil
+	}
+
+	// GradeManager
+	gradeManager := service.NewGradeManager()
 
 	// FileSorter
 	fileSorter := service.NewFileSorter(
