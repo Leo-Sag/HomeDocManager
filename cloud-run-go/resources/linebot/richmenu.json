@@ -4,7 +4,7 @@
         "height": 405
     },
     "selected": true,
-    "name": "RAG_Simplified_Menu",
+    "name": "RAG_Standard_Menu",
     "chatBarText": "メニュー",
     "areas": [
         {
@@ -15,8 +15,8 @@
                 "height": 405
             },
             "action": {
-                "type": "message",
-                "text": "__AI_TIPS__"
+                "type": "uri",
+                "uri": "https://line.me/R/oaMessage/@905xuhdb/?"
             }
         },
         {
